@@ -46,7 +46,7 @@ public:
 		Valueable<bool> RemoveMindControl_OnVictim;
 		Valueable<bool> RemoveMindControl_OnController;
 		Nullable<bool> RemoveParasite;
-		Valueable<bool> DecloakDamagedTargets;
+		Nullable<bool> DecloakDamagedTargets;
 		Valueable<bool> ShakeIsLocal;
 		Valueable<bool> ApplyModifiersOnNegativeDamage;
 		Valueable<bool> PenetratesIronCurtain;
@@ -175,6 +175,8 @@ public:
 		Nullable<double> DamageOwnerMultiplier;
 		Nullable<double> DamageAlliesMultiplier;
 		Nullable<double> DamageEnemiesMultiplier;
+		Valueable<double> DamageSourceHealthMultiplier;
+		Valueable<double> DamageTargetHealthMultiplier;
 
 		Valueable<bool> SuppressRevengeWeapons;
 		ValueableVector<WeaponTypeClass*> SuppressRevengeWeapons_Types;
@@ -186,6 +188,8 @@ public:
 		Valueable<bool> BuildingSell_IgnoreUnsellable;
 		Valueable<bool> BuildingUndeploy;
 		Valueable<bool> BuildingUndeploy_Leave;
+
+		Valueable<bool> ReverseEngineer;
 
 		Nullable<bool> CombatAlert_Suppress;
 
@@ -262,7 +266,7 @@ public:
 			, RemoveMindControl_OnVictim { true }
 			, RemoveMindControl_OnController { false }
 			, RemoveParasite {}
-			, DecloakDamagedTargets { true }
+			, DecloakDamagedTargets {}
 			, ShakeIsLocal { false }
 			, ApplyModifiersOnNegativeDamage { false }
 			, PenetratesIronCurtain { false }
@@ -391,6 +395,8 @@ public:
 			, DamageOwnerMultiplier {}
 			, DamageAlliesMultiplier {}
 			, DamageEnemiesMultiplier {}
+			, DamageSourceHealthMultiplier { 0.0 }
+			, DamageTargetHealthMultiplier { 0.0 }
 
 			, SuppressRevengeWeapons { false }
 			, SuppressRevengeWeapons_Types {}
@@ -402,6 +408,8 @@ public:
 			, BuildingSell_IgnoreUnsellable { false }
 			, BuildingUndeploy { false }
 			, BuildingUndeploy_Leave { false }
+
+			, ReverseEngineer { false }
 
 			, CombatAlert_Suppress {}
 
@@ -480,6 +488,7 @@ public:
 		void ApplyShieldModifiers(TechnoClass* pTarget);
 		void ApplyAttachEffects(TechnoClass* pTarget, HouseClass* pInvokerHouse, TechnoClass* pInvoker);
 		void ApplyBuildingUndeploy(TechnoClass* pTarget);
+		void ApplyReverseEngineer(HouseClass* pHouse, TechnoClass* pTarget);
 		double GetCritChance(TechnoClass* pFirer) const;
 	};
 

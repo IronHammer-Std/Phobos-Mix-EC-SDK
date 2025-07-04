@@ -137,6 +137,11 @@ public:
 
 		int AttackMoveFollowerTempCount;
 
+		bool UndergroundTracked;
+		bool SpecialTracked;
+
+		DynamicVectorClass<BulletClass*> BulletsTargetingMe;
+
 		ExtData(TechnoClass* OwnerObject) : Extension<TechnoClass>(OwnerObject)
 			, TypeExtData { nullptr }
 			, Shield {}
@@ -223,6 +228,9 @@ public:
 			, TintIntensityAllies { 0 }
 			, TintIntensityEnemies { 0 }
 			, AttackMoveFollowerTempCount { 0 }
+			, UndergroundTracked { false }
+			, SpecialTracked { false }
+			, BulletsTargetingMe {}
 		{ }
 
 		void OnEarlyUpdate();

@@ -1,4 +1,4 @@
-﻿#include "Body.h"
+#include "Body.h"
 
 #include <EventClass.h>
 #include <SpawnManagerClass.h>
@@ -8,6 +8,7 @@
 #include <DriveLocomotionClass.h>
 #include <ShipLocomotionClass.h>
 #include <HoverLocomotionClass.h>
+#include <TunnelLocomotionClass.h>
 
 #include <Ext/Anim/Body.h>
 #include <Ext/Building/Body.h>
@@ -16,6 +17,7 @@
 #include "Ext/WarheadType/Body.h"
 #include <Ext/OverlayType/Body.h>
 #include <Ext/TerrainType/Body.h>
+#include <Ext/Scenario/Body.h>
 #include <Utilities/AresHelper.h>
 #include <Utilities/Helpers.Alex.h>
 #include <Helpers/Macro.h>
@@ -367,9 +369,9 @@ DEFINE_HOOK(0x55B4E1, LogicClass_Update_UnmarkCellOccupationFlags, 0x5)
 }
 
 #pragma endregion
-/*
-#pragma region HardLoco
 
+#pragma region HardLoco
+/*
 DEFINE_HOOK_AGAIN(0x742A8C, UnitClass_SetDestination_PiggyBack, 0x8)
 DEFINE_HOOK(0x742691, UnitClass_SetDestination_PiggyBack, 0x8)
 {
@@ -786,6 +788,145 @@ DEFINE_HOOK(0x70023B, TechnoClass_MouseOverObject_AttackUnderGround, 0x5)
 	return (!pProjExt || !pProjExt->AU) ? FireIsNotOK : FireIsOK;
 }
 
+DEFINE_HOOK_AGAIN(0x729029, TunnelLocomotionClass_Process_Track, 0x7);
+DEFINE_HOOK(0x728F9A, TunnelLocomotionClass_Process_Track, 0x7)
+{
+	// GET(FootClass*, pTechno, ECX);
+	GET(ILocomotion*, pThis, ESI);
+
+	const auto pLoco = static_cast<TunnelLocomotionClass*>(pThis);
+	auto pTechno = pLoco->LinkedTo;
+	ScenarioExt::Global()->UndergroundTracker.AddUnique(pTechno);
+	TechnoExt::ExtMap.Find(pTechno)->UndergroundTracked = true;
+
+	return 0;
+}
+
+DEFINE_HOOK(0x7297F6, TunnelLocomotionClass_ProcessDigging_Track, 0x7)
+{
+	GET(FootClass*, pTechno, ECX);
+
+	ScenarioExt::Global()->UndergroundTracker.Remove(pTechno);
+	TechnoExt::ExtMap.Find(pTechno)->UndergroundTracked = false;
+
+	return 0;
+}
+
+DEFINE_HOOK(0x772AB3, WeaponTypeClass_AllowedThreats_AU, 0x5)
+{
+	GET(BulletTypeClass* const, pType, ECX);
+	GET(ThreatType, flags, EAX);
+
+	if (BulletTypeExt::ExtMap.Find(pType)->AU)
+		R->EAX(static_cast<unsigned int>(flags) | 0x20000u);
+
+	return 0;
+}
+
+namespace SelectAutoTarget_Context
+{
+	bool AU = false;
+}
+
+DEFINE_HOOK(0x6F8DF0, TechnoClass_SelectAutoTarget_Start_AU, 0x9)
+{
+	GET_STACK(unsigned int, flags, 0x4);
+	SelectAutoTarget_Context::AU = (flags & 0x20000u) != 0;
+	return 0;
+}
+
+DEFINE_HOOK(0x6F8FA8, TechnoClass_SelectAutoTarget_SetCanTargetWhatAmI_AU, 0x6)
+{
+	REF_STACK(int, canTargetWhatAmI, STACK_OFFSET(0x6C, -0x58));
+
+	if (SelectAutoTarget_Context::AU || ScenarioExt::Global()->SpecialTracker.Count)
+	{
+		canTargetWhatAmI |= 1 << (int)InfantryClass::AbsID;
+		canTargetWhatAmI |= 1 << (int)UnitClass::AbsID;
+		canTargetWhatAmI |= 1 << (int)AircraftClass::AbsID;
+	}
+
+	return 0;
+}
+
+DEFINE_HOOK(0x6F93BB, TechnoClass_SelectAutoTarget_Scan_AU, 0x6)
+{
+	enum { FuncRet = 0x6F9DA1, Continue = 0x6F93C1 };
+
+	REF_STACK(const TechnoClass*, pBestTarget, STACK_OFFSET(0x6C, -0x4C));
+	REF_STACK(int, bestThreat, STACK_OFFSET(0x6C, -0x50));
+	GET_STACK(const bool, transportMCed, STACK_OFFSET(0x6C, -0x59));
+	GET_STACK(const bool, onlyTargetEnemyHouse, STACK_OFFSET(0x6C, 0xC));
+	GET_STACK(const int, canTargetWhatAmI, STACK_OFFSET(0x6C, -0x58));
+	GET_STACK(const int, wantedDist, STACK_OFFSET(0x6C, -0x40));
+	GET_STACK(const ThreatType, flags, STACK_OFFSET(0x6C, 0x4));
+	GET(TechnoClass* const, pThis, ESI);
+
+	const auto pType = pThis->GetTechnoType();
+	const auto pOwner = pThis->Owner;
+	const bool targetFriendly = pType->AttackFriendlies || pThis->Berzerk || transportMCed || pThis->CombatDamage(-1) < 0;
+
+	int threatBuffer = 0;
+	auto tempCrd = CoordStruct::Empty;
+
+	for (const auto pCurrent : ScenarioExt::Global()->SpecialTracker)
+	{
+		if ((!pOwner->IsAlliedWith(pCurrent) || targetFriendly)
+			&& (!onlyTargetEnemyHouse || pCurrent->Owner->ArrayIndex == pThis->Owner->EnemyHouseIndex)
+			&& pThis->CanAutoTargetObject(flags, canTargetWhatAmI, wantedDist, pCurrent, &threatBuffer, UINT_MAX, &tempCrd))
+		{
+			if (pType->DistributedFire)
+			{
+				pThis->CurrentTargets.AddItem(pCurrent);
+				pThis->CurrentTargetThreatValues.AddItem(threatBuffer);
+			}
+
+			if (threatBuffer > bestThreat)
+			{
+				pBestTarget = pCurrent;
+				bestThreat = threatBuffer;
+			}
+		}
+	}
+
+	if (SelectAutoTarget_Context::AU)
+	{
+		for (const auto pCurrent : ScenarioExt::Global()->UndergroundTracker)
+		{
+			if ((!pOwner->IsAlliedWith(pCurrent) || targetFriendly)
+				&& (!onlyTargetEnemyHouse || pCurrent->Owner->ArrayIndex == pThis->Owner->EnemyHouseIndex)
+				&& pThis->CanAutoTargetObject(flags, canTargetWhatAmI, wantedDist, pCurrent, &threatBuffer, UINT_MAX, &tempCrd))
+			{
+				if (pType->DistributedFire)
+				{
+					pThis->CurrentTargets.AddItem(pCurrent);
+					pThis->CurrentTargetThreatValues.AddItem(threatBuffer);
+				}
+
+				if (threatBuffer > bestThreat)
+				{
+					pBestTarget = pCurrent;
+					bestThreat = threatBuffer;
+				}
+			}
+		}
+	}
+
+	GET(int, rangeFindingCell, ECX);
+
+	return rangeFindingCell <= 0 ? FuncRet : Continue;
+}
+
+DEFINE_HOOK(0x6F7E1E, TechnoClass_CanAutoTargetObject_AU, 0x6)
+{
+	enum { Continue = 0x6F7E24, ReturnFalse = 0x6F894F };
+
+	GET(TechnoClass*, pTarget, ESI);
+	GET(int, height, EAX);
+
+	return height >= -20 || SelectAutoTarget_Context::AU || TechnoExt::ExtMap.Find(pTarget)->SpecialTracked ? Continue : ReturnFalse;
+}
+
 #pragma endregion
 
 #pragma region GuardRange
@@ -990,7 +1131,7 @@ DEFINE_HOOK(0x700B28, TechnoClass_MouseOverCell_JustHasRallyPoint, 0x6)
 
 DEFINE_HOOK(0x455DA0, BuildingClass_IsUnitFactory_JustHasRallyPoint, 0x6)
 {
-	enum { SkipGameCode = 0x455DCC };
+	enum { SkipGameCode = 0x455DCD };
 
 	GET(BuildingClass* const, pThis, ECX);
 
@@ -1504,6 +1645,20 @@ DEFINE_HOOK(0x47C329, CellClass_GetRadarColor_UnifiedRadarColor, 0x7)
 	return 0;
 }
 
+DEFINE_HOOK(0x655E58, RadarClass_ProcessPoint_DrawOccupiable, 0x6)
+{
+	GET(TechnoClass*, pTechno, EBP);
+
+	const auto pBuilding = abstract_cast<BuildingClass*>(pTechno);
+	const bool noDraw = pTechno->Owner->Type->MultiplayPassive
+		&& (!RulesExt::Global()->UnifiedRadarColor
+			|| !pBuilding
+			|| !pBuilding->Type->CanBeOccupied);
+
+	R->CL(noDraw);
+	return R->Origin() + 0x6;
+}
+
 #pragma endregion
 
 #pragma region UnifiedTechnoColor
@@ -1518,6 +1673,10 @@ DEFINE_HOOK(0x655F80, RadarClass_ProcessPoint_UnifiedRadarColor, 0x6)
 		return 0;
 
 	const auto pRulesExt = RulesExt::Global();
+
+	if (!pRulesExt->UnifiedRadarColor)
+		return 0;
+
 	int colorCode = 0;
 
 	if (pOwner->Type->MultiplayPassive)
@@ -1944,7 +2103,7 @@ static inline void CheckVHPScanAndRetarget(TechnoClass* pThis)
 
 	const auto pTargetTechno = abstract_cast<TechnoClass*>(pThis->Target);
 
-	if (!pTargetTechno || pTargetTechno->EstimatedHealth > 0)
+	if (!pTargetTechno || pTargetTechno->EstimatedHealth > 0 || pThis->Owner->IsAlliedWith(pTargetTechno))
 		return;
 
 	pThis->SetTarget(nullptr);
@@ -2011,6 +2170,35 @@ DEFINE_HOOK(0x6F8721, TechnoClass_CanAutoTargetObject_VHPScanThreat, 0x7)
 	return 0;
 }
 
+DEFINE_HOOK(0x6F9F7B, TechnoClass_Update_EstimateHealth, 0x7)
+{
+	enum { SkipGameCode = 0x6F9F9F };
+
+	if (!RulesExt::Global()->VHPScan_Enhanced)
+		return 0;
+
+	GET(TechnoClass*, pThis, ESI);
+
+	if (pThis->EstimatedHealth < pThis->Health)
+	{
+		auto& vec = TechnoExt::ExtMap.Find(pThis)->BulletsTargetingMe;
+
+		while (vec.Count > 0)
+		{
+			auto pBullet = vec[0];
+
+			if (VTable::Get(pBullet) != 0x7E46E4) // BulletClass::VTable
+				vec.RemoveItem(0);
+			else
+				return SkipGameCode;
+		}
+
+		pThis->EstimatedHealth = pThis->Health;
+	}
+
+	return SkipGameCode;
+}
+
 #pragma endregion
 
 #pragma region Activate
@@ -2044,6 +2232,86 @@ DEFINE_HOOK(0x7460EC, UnitClass_AStarAttempt_PathingTooFar, 0x5)
 }
 
 #pragma region
+
+#pragma region Decloak
+
+DEFINE_HOOK(0x6FBC74, TechnoClass_UpdateCloak_LowHealth, 0x6)
+{
+	return RulesExt::Global()->Decloak_OnCloakingWithLowHealth ? 0 : R->Origin() + 0xC;
+}
+
+DEFINE_HOOK(0x74192E, UnitClass_CrushCell_Decloak, 0x5)
+{
+	return RulesExt::Global()->Decloak_OnCrushing ? 0 : R->Origin() + 0xB;
+}
+
+DEFINE_HOOK_AGAIN(0x75BBA1, SomeLocomotionClass_WhileMoving_DecloakBlockage, 0x6); // Walk
+DEFINE_HOOK_AGAIN(0x6A3A7A, SomeLocomotionClass_WhileMoving_DecloakBlockage, 0x6); // Ship
+DEFINE_HOOK_AGAIN(0x6A2FA0, SomeLocomotionClass_WhileMoving_DecloakBlockage, 0x6); // Ship
+DEFINE_HOOK_AGAIN(0x6A1499, SomeLocomotionClass_WhileMoving_DecloakBlockage, 0x6); // Ship
+DEFINE_HOOK_AGAIN(0x5B0F33, SomeLocomotionClass_WhileMoving_DecloakBlockage, 0x6); // Mech
+DEFINE_HOOK_AGAIN(0x51558A, SomeLocomotionClass_WhileMoving_DecloakBlockage, 0x6); // Hover
+DEFINE_HOOK_AGAIN(0x4B444E, SomeLocomotionClass_WhileMoving_DecloakBlockage, 0x6); // Drive
+DEFINE_HOOK_AGAIN(0x4B3951, SomeLocomotionClass_WhileMoving_DecloakBlockage, 0x6); // Drive
+DEFINE_HOOK(0x4B1E56, SomeLocomotionClass_WhileMoving_DecloakBlockage, 0x6) // Drive
+{
+	return RulesExt::Global()->Decloak_OnBlockingMovement ? 0 : R->Origin() + 0x12;
+}
+
+#pragma endregion
+
+#pragma region AIAdjacentMax
+
+DEFINE_HOOK_AGAIN(0x42EB6A, BaseClass_GetBaseNodeIndex_AIAdjacentMax, 0x8);
+DEFINE_HOOK(0x42EBA2, BaseClass_GetBaseNodeIndex_AIAdjacentMax, 0x8)
+{
+	GET(BaseClass*, pThis, ESI);
+	GET(const int, nodeIdx, EDI);
+
+	bool isValid = reinterpret_cast<bool(__thiscall*)(BaseClass*, int)>(0x42E780)(pThis, nodeIdx);
+	const int rangeLimit = SessionClass::Instance.IsCampaign()
+		? RulesExt::Global()->AIAdjacentMax_Campaign.Get(RulesExt::Global()->AIAdjacentMax)
+		: RulesExt::Global()->AIAdjacentMax;
+
+	if (rangeLimit >= 0 && isValid)
+	{
+		const auto node = pThis->BaseNodes[nodeIdx];
+		const auto pOwner = pThis->Owner;
+		const auto pBuildingType = BuildingTypeClass::Array[node.BuildingTypeIndex];
+		const CellStruct offset
+		{
+			static_cast<short>(pBuildingType->GetFoundationWidth() / 2),
+			static_cast<short>(pBuildingType->GetFoundationHeight(false) / 2)
+		};
+		const auto center = node.MapCoords + offset;
+		const auto cellList = GeneralUtils::AdjacentCellsInRange(rangeLimit);
+		bool hasAdjacent = false;
+
+		for (const auto& cell : cellList)
+		{
+			const auto pBuilding = MapClass::Instance.GetCellAt(cell + center)->GetBuilding();
+
+			if (!pBuilding || pBuilding->Owner != pOwner)
+				continue;
+
+			const auto pType = pBuilding->Type;
+			const auto baseNormalDefault = (!pType->UndeploysInto || !pType->ResourceGatherer) && !pBuilding->IsStrange();
+
+			if (BuildingTypeExt::ExtMap.Find(pType)->AIBaseNormal.Get(baseNormalDefault))
+			{
+				hasAdjacent = true;
+				break;
+			}
+		}
+
+		isValid = hasAdjacent;
+	}
+
+	R->AL(isValid);
+	return R->Origin() + 0x8;
+}
+
+#pragma endregion
 
 // TODO Self-made impl
 
@@ -2264,7 +2532,7 @@ DEFINE_HOOK(0x6F9C80, TechnoClass_GreatestThreat_LogDeadInTechnoArray, 0x9)
 
 	auto pTechno = TechnoClass::Array.Items[index];
 
-	if (pTechno->IsDead())
+	if (pTechno->IsDead() && Phobos::Config::DebugToolEnable)
 	{
 		if (VTable::Get(pTechno) == 0x7E1F50) // AbstractClass::AbsVTable
 		{
@@ -2307,7 +2575,7 @@ DEFINE_HOOK(0x6F91EC, TechnoClass_GreatestThreat_LogDeadInAircraftTracker, 0x6)
 	GET(TechnoClass* const, pThis, ESI);
 	GET(TechnoClass* const, pTechno, EBP);
 
-	if (pTechno->IsDead())
+	if (pTechno->IsDead() && Phobos::Config::DebugToolEnable)
 	{
 		if (VTable::Get(pTechno) == 0x7E1F50) // AbstractClass::AbsVTable
 		{
@@ -2357,7 +2625,7 @@ DEFINE_HOOK(0x7043B9, TechnoClass_GetZAdjustment_LogTetherButNoLink, 0x6)
 
 	GET(TechnoClass* const, pLink, EAX);
 
-	if (pLink)
+	if (pLink || !Phobos::Config::DebugToolEnable)
 		return 0;
 
 	GET(TechnoClass* const, pThis, ESI);
@@ -2387,7 +2655,7 @@ DEFINE_HOOK(0x73B0C5, UnitClass_DrawIfVisible_LogTetherButNoLink, 0x6)
 
 	GET(TechnoClass* const, pLink, EAX);
 
-	if (pLink)
+	if (pLink || !Phobos::Config::DebugToolEnable)
 		return 0;
 
 	GET(TechnoClass* const, pThis, EDI);
@@ -2417,7 +2685,7 @@ DEFINE_HOOK(0x7410D6, UnitClass_GetFireError_LogTetherButNoLink, 0x7)
 
 	GET(TechnoClass* const, pLink, EAX);
 
-	if (pLink)
+	if (pLink || !Phobos::Config::DebugToolEnable)
 		return 0;
 
 	GET(TechnoClass* const, pThis, ESI);
@@ -2439,47 +2707,6 @@ DEFINE_HOOK(0x7410D6, UnitClass_GetFireError_LogTetherButNoLink, 0x7)
 	}
 
 	return SkipGameCode;
-}
-
-#pragma endregion
-
-#pragma region DebugLogInAnimBomb
-
-DEFINE_HOOK(0x4255B0, AnimClass_UnInit_LogWhenHaveBomb, 0x6)
-{
-	GET(AnimClass* const, pAnim, ECX);
-
-	if (!pAnim->AttachedBomb)
-		return 0;
-
-	TechnoClass* pInvoker = nullptr;
-	HouseClass* pInvokerHouse = nullptr;
-
-	if (const auto pAnimExt = AnimExt::ExtMap.Find(pAnim))
-	{
-		pInvoker = pAnimExt->Invoker;
-		pInvokerHouse = pAnimExt->InvokerHouse;
-	}
-
-	Debug::LogAndMessage("AnimClass::UnInit: Found a Anim [%s] (Invoker [%s](%s)) have been attached a bomb [0x%08X]!\n",
-		(pAnim->Type ? pAnim->Type->get_ID() : "N/A"), (pInvoker ? pInvoker->get_ID() : "N/A"),
-		(pInvokerHouse ? pInvokerHouse->get_ID() : "N/A"), reinterpret_cast<DWORD>(pAnim->AttachedBomb));
-
-	pAnim->AttachedBomb = nullptr;
-
-	if (SessionClass::IsSingleplayer() && Phobos::Config::DevelopmentCommands)
-	{
-		Debug::LogAndMessage("Skip processing. Entering Stepping Mode...\n");
-		FrameByFrameCommandClass::FrameStep = true;
-		auto coords = pAnim->GetCoords();
-		TacticalClass::Instance->SetTacticalPosition(&coords);
-	}
-	else
-	{
-		Debug::LogAndMessage("Skip processing.\n");
-	}
-
-	return 0;
 }
 
 #pragma endregion

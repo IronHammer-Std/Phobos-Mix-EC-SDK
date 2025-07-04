@@ -95,6 +95,7 @@ public:
 	class Config
 	{
 	public:
+		static bool DebugToolEnable;
 		static bool ToolTipDescriptions;
 		static bool ToolTipBlur;
 		static bool PrioritySelectionFiltering;
@@ -125,7 +126,6 @@ public:
 		static bool ShowFlashOnSelecting;
 		static bool UnitPowerDrain;
 		static int SuperWeaponSidebar_RequiredSignificance;
-		static bool EnableLaserTrails;
 		static bool SelectedDisplay_Enable;
 		static bool SelectedDisplay_Expand;
 		static int SelectedDisplay_MaxCameo;

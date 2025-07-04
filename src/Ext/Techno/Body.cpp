@@ -78,6 +78,12 @@ TechnoExt::ExtData::~ExtData()
 
 	this->MyTrackingLasers.clear();
 
+	if (this->UndergroundTracked)
+		ScenarioExt::Global()->UndergroundTracker.Remove(pThis);
+
+	if (this->SpecialTracked)
+		ScenarioExt::Global()->SpecialTracker.Remove(pThis);
+
 	if (pTypeExt->AutoDeath_Behavior.isset())
 	{
 		auto& vec = ScenarioExt::Global()->AutoDeathObjects;
@@ -1203,6 +1209,9 @@ void TechnoExt::ExtData::Serialize(T& Stm)
 		.Process(this->TintIntensityAllies)
 		.Process(this->TintIntensityEnemies)
 		.Process(this->AttackMoveFollowerTempCount)
+		.Process(this->UndergroundTracked)
+		.Process(this->SpecialTracked)
+		.Process(this->BulletsTargetingMe)
 		;
 }
 

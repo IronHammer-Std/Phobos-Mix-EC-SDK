@@ -10,6 +10,8 @@
 #include "Utilities/AresHelper.h"
 #include "Utilities/Parser.h"
 
+#include <Phobos.ECInit.h>
+
 bool Phobos::HideWarning = false;
 bool Phobos::PoweredByEC = false;
 
@@ -80,13 +82,6 @@ void Phobos::CmdLineParse(char** ppArgs, int nNumArgs)
 			if (boolParser.TryParse(value.c_str(), &v))
 				dontSetExceptionHandler = !v;
 		}
-	}
-
-	if (!Phobos::HideWarning && !Phobos::IsTrialValid() && !Phobos::PoweredByEC)
-	{
-		Debug::Log("Initialized version: " PRODUCT_VERSION " failed! \n");
-		MessageBoxExW(NULL, L"试用期已结束，且未检测到授权！", Phobos::VersionDescription, MB_ICONERROR, 0);
-		FatalExit(0xDEAD);
 	}
 
 	if (foundInclude)
@@ -269,6 +264,7 @@ bool __stdcall DllMain(HANDLE hInstance, DWORD dwReason, LPVOID v)
 	if (dwReason == DLL_PROCESS_ATTACH)
 	{
 		Phobos::hInstance = hInstance;
+		ECInitialize();
 	}
 	return true;
 }
@@ -280,6 +276,19 @@ DEFINE_HOOK(0x7CD810, ExeRun, 0x9)
 
 	return 0;
 }
+
+DEFINE_HOOK(0x6BC0D2, AfterECInit, 0x5)
+{
+	if (!Phobos::HideWarning && !Phobos::IsTrialValid() && !Phobos::PoweredByEC)
+	{
+		Debug::Log("Initialized version: " PRODUCT_VERSION " failed! \n");
+		MessageBoxExW(NULL, L"试用期已结束，且未检测到授权！", Phobos::VersionDescription, MB_ICONERROR, 0);
+		FatalExit(0xDEAD);
+	}
+
+	return 0;
+}
+
 // Avoid confusing the profiler unless really necessary
 #ifdef DEBUG
 DEFINE_NAKED_HOOK(0x7CD8EA, _ExeTerminate)
@@ -328,7 +337,7 @@ DEFINE_HOOK(0x683E7F, ScenarioClass_Start_Optimizations, 0x7)
 
 DEFINE_HOOK(0x4F4583, GScreenClass_DrawText, 0x6)
 {
-	if (!Phobos::HideWarning)
+	if (!Phobos::HideWarning && !Phobos::PoweredByEC)
 	{
 		RectangleStruct wanted = Drawing::GetTextDimensions(Phobos::VersionDescription, Point2D::Empty, 0);
 		Point2D location { DSurface::Composite->GetWidth() - wanted.Width - 5, 5 };

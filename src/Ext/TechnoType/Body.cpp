@@ -537,19 +537,17 @@ TechnoClass* TechnoTypeExt::CreateUnit(CreateUnitTypeClass* pCreateUnit, DirType
 
 DirStruct TechnoTypeExt::ExtData::GetTurretDesiredDir(DirStruct defaultDir)
 {
-	const auto turretExtraAngle = this->Turret_ExtraAngle.Get();
+	const auto turretExtraDir = this->Turret_ExtraAngle.Get();
 
-	if (!turretExtraAngle)
+	if (!turretExtraDir.Raw)
 		return defaultDir;
 
-	const auto rotate = DirStruct { static_cast<int>(turretExtraAngle * TechnoTypeExt::AngleToRaw + 0.5) };
-
-	return DirStruct { static_cast<short>(defaultDir.Raw) + static_cast<short>(rotate.Raw) };
+	return DirStruct { static_cast<short>(defaultDir.Raw) + static_cast<short>(turretExtraDir.Raw) };
 }
 
 void TechnoTypeExt::ExtData::SetTurretLimitedDir(FootClass* pThis, DirStruct desiredDir)
 {
-	const auto turretRestrictAngle = this->Turret_Restriction.Get();
+	const auto turretRestrictDir = this->Turret_Restriction.Get();
 	const auto pBody = &pThis->PrimaryFacing;
 	const auto pTurret = &pThis->SecondaryFacing;
 	const auto destinationDir = this->GetTurretDesiredDir(desiredDir);
@@ -567,13 +565,13 @@ void TechnoTypeExt::ExtData::SetTurretLimitedDir(FootClass* pThis, DirStruct des
 		pTurret->SetDesired(dir);
 	};
 	// There are no restrictions
-	if (turretRestrictAngle >= 180.0)
+	if (static_cast<int>(turretRestrictDir.Raw) >= 32768)
 	{
 		setTurretDesired(destinationDir);
 		return;
 	}
 
-	const auto restrictRaw = static_cast<short>(turretRestrictAngle * TechnoTypeExt::AngleToRaw + 0.5);
+	const auto restrictRaw = static_cast<short>(turretRestrictDir.Raw);
 	const auto desiredRaw = static_cast<short>(destinationDir.Raw);
 	const auto turretRaw = static_cast<short>(pTurret->Current().Raw);
 
@@ -621,15 +619,12 @@ void TechnoTypeExt::ExtData::SetTurretLimitedDir(FootClass* pThis, DirStruct des
 
 short TechnoTypeExt::ExtData::GetTurretLimitedRaw(short currentDirectionRaw)
 {
-	const auto turretRestrictAngle = this->Turret_Restriction.Get();
+	const auto turretRestrictDir = this->Turret_Restriction.Get();
 
-	if (turretRestrictAngle < 0)
-		return 0;
-
-	if (turretRestrictAngle >= 180.0)
+	if (static_cast<int>(turretRestrictDir.Raw) >= 32768)
 		return currentDirectionRaw;
 
-	const auto restrictRaw = static_cast<short>(this->Turret_Restriction * TechnoTypeExt::AngleToRaw + 0.5);
+	const auto restrictRaw = static_cast<short>(turretRestrictDir.Raw);
 
 	if (currentDirectionRaw < -restrictRaw)
 		return -restrictRaw;
@@ -642,12 +637,12 @@ short TechnoTypeExt::ExtData::GetTurretLimitedRaw(short currentDirectionRaw)
 
 DirStruct TechnoTypeExt::ExtData::GetBodyDesiredDir(DirStruct currentDir, DirStruct defaultDir)
 {
-	const auto bodyAngle = this->Turret_BodyOrientationAngle.Get();
+	const auto bodyDir = this->Turret_BodyOrientationAngle.Get();
 
-	if (!bodyAngle)
+	if (!bodyDir.Raw)
 		return defaultDir;
 
-	const auto rotateRaw = static_cast<short>(bodyAngle * TechnoTypeExt::AngleToRaw + 0.5);
+	const auto rotateRaw = static_cast<short>(bodyDir.Raw);
 	const auto rotate = DirStruct { this->GetTurretLimitedRaw(rotateRaw) };
 	const auto rightDir = DirStruct { static_cast<short>(defaultDir.Raw) + static_cast<short>(rotate.Raw) };
 
@@ -1076,6 +1071,26 @@ void TechnoTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 	this->Turret_BodyOrientationAngle.Read(exINI, pSection, "Turret.BodyOrientationAngle");
 	this->Turret_BodyOrientationSymmetric.Read(exINI, pSection, "Turret.BodyOrientationSymmetric");
 
+	this->TargetExtraThreat.Read(exINI, pSection, "TargetExtraThreat");
+	{
+		ValueableVector<double> ReadAngles {};
+		ReadAngles.Read(exINI, pSection, "TargetExtraThreat.Angles");
+
+		if (const size_t count = ReadAngles.size())
+		{
+			this->TargetExtraThreat_Angles.clear();
+			this->TargetExtraThreat_Angles.resize(count);
+
+			for (size_t i = 0; i < count; ++i)
+			{
+				const int raw = static_cast<int>(ReadAngles[i] * (65536.0 / 360.0) + 0.5);
+				this->TargetExtraThreat_Angles[i] = DirStruct(std::clamp(raw, 0, 65535));
+			}
+		}
+	}
+	this->TargetExtraThreat_Multipliers.Read(exINI, pSection, "TargetExtraThreat.Multipliers");
+	this->TargetExtraThreat_Turret.Read(exINI, pSection, "TargetExtraThreat.Turret");
+
 	this->CanBeBuiltOn.Read(exINI, pSection, "CanBeBuiltOn");
 	this->ExtraBaseNormal.Read(exINI, pSection, "ExtraBaseNormal");
 	this->ExtraBaseForAllyBuilding.Read(exINI, pSection, "ExtraBaseForAllyBuilding");
@@ -1166,13 +1181,10 @@ void TechnoTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 
 	this->DistributeTargetingFrame.Read(exINI, pSection, "DistributeTargetingFrame");
 
-	this->ThisIsAJumpjet.Read(exINI, pSection, "ThisIsAJumpjet");
-
-	if (this->ThisIsAJumpjet && pThis->WhatAmI() == AbstractType::AircraftType)
-	{
-		this->ThisIsAJumpjetOf = reinterpret_cast<UnitTypeClass*(__thiscall*)(const char*)>(0x7480D0)(pSection);
-		TechnoTypeExt::ExtMap.Find(this->ThisIsAJumpjetOf)->ThisIsAJumpjetOf = pThis;
-	}
+	if (pThis->WhatAmI() == AbstractType::AircraftType)
+		this->ThisIsAJumpjet.Read(exINI, pSection, "ThisIsAJumpjet");
+	else
+		this->ThisIsAJumpjet = nullptr;
 
 	this->IgnoreRallyPoint.Read(exINI, pSection, "IgnoreRallyPoint");
 
@@ -1406,28 +1418,24 @@ void TechnoTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 	this->ShadowIndex_Frame.Read(exArtINI, pArtSection, "ShadowIndex.Frame");
 
 	this->LaserTrailData.clear();
-
-	if (Phobos::Config::EnableLaserTrails)
+	for (size_t i = 0; ; ++i)
 	{
-		for (size_t i = 0; ; ++i)
-		{
-			NullableIdx<LaserTrailTypeClass> trail;
-			_snprintf_s(tempBuffer, sizeof(tempBuffer), "LaserTrail%d.Type", i);
-			trail.Read(exArtINI, pArtSection, tempBuffer);
+		NullableIdx<LaserTrailTypeClass> trail;
+		_snprintf_s(tempBuffer, sizeof(tempBuffer), "LaserTrail%d.Type", i);
+		trail.Read(exArtINI, pArtSection, tempBuffer);
 
-			if (!trail.isset())
-				break;
+		if (!trail.isset())
+			break;
 
-			Valueable<CoordStruct> flh;
-			_snprintf_s(tempBuffer, sizeof(tempBuffer), "LaserTrail%d.FLH", i);
-			flh.Read(exArtINI, pArtSection, tempBuffer);
+		Valueable<CoordStruct> flh;
+		_snprintf_s(tempBuffer, sizeof(tempBuffer), "LaserTrail%d.FLH", i);
+		flh.Read(exArtINI, pArtSection, tempBuffer);
 
-			Valueable<bool> isOnTurret;
-			_snprintf_s(tempBuffer, sizeof(tempBuffer), "LaserTrail%d.IsOnTurret", i);
-			isOnTurret.Read(exArtINI, pArtSection, tempBuffer);
+		Valueable<bool> isOnTurret;
+		_snprintf_s(tempBuffer, sizeof(tempBuffer), "LaserTrail%d.IsOnTurret", i);
+		isOnTurret.Read(exArtINI, pArtSection, tempBuffer);
 
-			this->LaserTrailData.push_back({ ValueableIdx<LaserTrailTypeClass>(trail), flh, isOnTurret });
-		}
+		this->LaserTrailData.push_back({ ValueableIdx<LaserTrailTypeClass>(trail), flh, isOnTurret });
 	}
 
 	this->ParseBurstFLHs(exArtINI, pArtSection, this->WeaponBurstFLHs, this->EliteWeaponBurstFLHs, "");
@@ -1881,6 +1889,11 @@ void TechnoTypeExt::ExtData::Serialize(T& Stm)
 		.Process(this->Turret_BodyOrientationAngle)
 		.Process(this->Turret_BodyOrientationSymmetric)
 
+		.Process(this->TargetExtraThreat)
+		.Process(this->TargetExtraThreat_Angles)
+		.Process(this->TargetExtraThreat_Multipliers)
+		.Process(this->TargetExtraThreat_Turret)
+
 		.Process(this->CanBeBuiltOn)
 		.Process(this->ExtraBaseNormal)
 		.Process(this->ExtraBaseForAllyBuilding)
@@ -1982,7 +1995,6 @@ void TechnoTypeExt::ExtData::Serialize(T& Stm)
 		.Process(this->DistributeTargetingFrame)
 
 		.Process(this->ThisIsAJumpjet)
-		.Process(this->ThisIsAJumpjetOf)
 
 		.Process(this->IgnoreRallyPoint)
 

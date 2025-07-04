@@ -275,6 +275,8 @@ void WarheadTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 	this->DamageOwnerMultiplier.Read(exINI, pSection, "DamageOwnerMultiplier");
 	this->DamageAlliesMultiplier.Read(exINI, pSection, "DamageAlliesMultiplier");
 	this->DamageEnemiesMultiplier.Read(exINI, pSection, "DamageEnemiesMultiplier");
+	this->DamageSourceHealthMultiplier.Read(exINI, pSection, "DamageSourceHealthMultiplier");
+	this->DamageTargetHealthMultiplier.Read(exINI, pSection, "DamageTargetHealthMultiplier");
 
 	this->SuppressRevengeWeapons.Read(exINI, pSection, "SuppressRevengeWeapons");
 	this->SuppressRevengeWeapons_Types.Read(exINI, pSection, "SuppressRevengeWeapons.Types");
@@ -286,6 +288,8 @@ void WarheadTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 	this->BuildingSell_IgnoreUnsellable.Read(exINI, pSection, "BuildingSell.IgnoreUnsellable");
 	this->BuildingUndeploy.Read(exINI, pSection, "BuildingUndeploy");
 	this->BuildingUndeploy_Leave.Read(exINI, pSection, "BuildingUndeploy.Leave");
+
+	this->ReverseEngineer.Read(exINI, pSection, "ReverseEngineer");
 
 	this->CombatAlert_Suppress.Read(exINI, pSection, "CombatAlert.Suppress");
 
@@ -375,6 +379,7 @@ void WarheadTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 		|| this->AttachEffects.RemoveGroups.size() > 0
 		|| this->BuildingSell
 		|| this->BuildingUndeploy
+		|| this->ReverseEngineer
 	);
 
 	char tempBuffer[32];
@@ -573,6 +578,8 @@ void WarheadTypeExt::ExtData::Serialize(T& Stm)
 		.Process(this->DamageOwnerMultiplier)
 		.Process(this->DamageAlliesMultiplier)
 		.Process(this->DamageEnemiesMultiplier)
+		.Process(this->DamageSourceHealthMultiplier)
+		.Process(this->DamageTargetHealthMultiplier)
 
 		.Process(this->Parasite_CullingTarget)
 
@@ -588,7 +595,10 @@ void WarheadTypeExt::ExtData::Serialize(T& Stm)
 		.Process(this->BuildingUndeploy)
 		.Process(this->BuildingUndeploy_Leave)
 
+		.Process(this->ReverseEngineer)
+
 		.Process(this->CombatAlert_Suppress)
+
 		.Process(this->NoCellSpread)
 		.Process(this->NoCellSpread_SnapDistance)
 

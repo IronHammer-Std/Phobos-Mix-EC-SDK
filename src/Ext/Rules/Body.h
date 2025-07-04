@@ -378,6 +378,16 @@ public:
 
 		Valueable<bool> DamageWallRecursivly;
 
+		Valueable<bool> DecloakDamagedTargets;
+		Valueable<bool> Decloak_OnBlockingMovement;
+		Valueable<bool> Decloak_OnCloakingWithLowHealth;
+		Valueable<bool> Decloak_OnCrushing;
+
+		Valueable<bool> InvisoBlockageFix;
+
+		Valueable<int> AIAdjacentMax;
+		Nullable<int> AIAdjacentMax_Campaign;
+
 		// cache tint color
 		int TintColorIronCurtain;
 		int TintColorForceShield;
@@ -703,6 +713,16 @@ public:
 
 			, AttackMove_IgnoreWeaponCheck { false }
 			, AttackMove_StopWhenTargetAcquired { }
+
+			, DecloakDamagedTargets { true }
+			, Decloak_OnBlockingMovement { true }
+			, Decloak_OnCloakingWithLowHealth { true }
+			, Decloak_OnCrushing { true }
+
+			, InvisoBlockageFix { false }
+
+			, AIAdjacentMax { -1 }
+			, AIAdjacentMax_Campaign {}
 		{ }
 
 		virtual ~ExtData() = default;

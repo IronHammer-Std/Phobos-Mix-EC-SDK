@@ -191,55 +191,6 @@ DEFINE_HOOK(0x6B7282, SpawnManagerClass_AI_PromoteSpawns, 0x5)
 	return 0;
 }
 
-#pragma endregion
-
-#pragma region CheckRepairDone
-
-static inline bool ShouldResetSpawnManagerTarget(SpawnManagerClass* pThis)
-{
-	if (!pThis->Target)
-		return true;
-
-	if (TechnoTypeExt::ExtMap.Find(pThis->Owner->GetTechnoType())->Spawner_ReturnOnRepairDone)
-	{
-		auto pTarget = abstract_cast<TechnoClass*>(pThis->Target);
-
-		if (pTarget && pTarget->GetHealthPercentage() >= RulesClass::Instance->unknown_double_16F8)
-			return true;
-	}
-
-	return false;
-}
-
-DEFINE_HOOK(0x6B7702, SpawnManagerClass_AI_CheckRepairDone1, 0x5)
-{
-	enum { KeepTarget = 0x6B770D, ResetTarget = 0x6B7663 };
-
-	GET(SpawnManagerClass*, pThis, ESI);
-
-	R->EAX(pThis->Target);
-	return ShouldResetSpawnManagerTarget(pThis) ? ResetTarget : KeepTarget;
-}
-
-DEFINE_HOOK(0x6B7752, SpawnManagerClass_AI_CheckRepairDone2, 0x5)
-{
-	enum { KeepTarget = 0x6B7759, ResetTarget = 0x6B7793 };
-
-	GET(SpawnManagerClass*, pThis, ESI);
-
-	R->EAX(pThis->Target);
-	return ShouldResetSpawnManagerTarget(pThis) ? ResetTarget : KeepTarget;
-}
-
-DEFINE_HOOK(0x6B79BF, SpawnManagerClass_AI_CheckRepairDone3, 0x5)
-{
-	enum { ResetTarget = 0x6B79C4, KeepTarget = 0x6B79D3 };
-	GET(SpawnManagerClass*, pThis, ESI);
-	return ShouldResetSpawnManagerTarget(pThis) ? ResetTarget : KeepTarget;
-}
-
-#pragma endregion
-
 DEFINE_HOOK(0x6B77B4, SpawnManagerClass_Update_RecycleSpawned, 0x7)
 {
 	enum { Recycle = 0x6B7809, NoRecycle = 0x6B7838 };
@@ -332,6 +283,70 @@ DEFINE_HOOK(0x6B74F0, SpawnManagerClass_AI_UseTurretFacing, 0x5)
 		R->EAX(pTechno->SecondaryFacing.Current().Raw);
 
 	return 0;
+}
+
+DEFINE_HOOK(0x418CF3, AircraftClass_Mission_Attack_ReturnToSpawnOwner, 0x5)
+{
+	enum { SkipGameCode = 0x418D00 };
+
+	GET(AircraftClass* const, pThis, ESI);
+
+	const auto pSpawnOwner = pThis->SpawnOwner;
+
+	if (!pSpawnOwner)
+		return 0;
+
+	pThis->SetDestination(pSpawnOwner, true);
+	pThis->QueueMission(Mission::Move, false);
+
+	return SkipGameCode;
+}
+
+#pragma endregion
+
+#pragma region CheckRepairDone
+
+static inline bool ShouldResetSpawnManagerTarget(SpawnManagerClass* pThis)
+{
+	if (!pThis->Target)
+		return true;
+
+	if (TechnoTypeExt::ExtMap.Find(pThis->Owner->GetTechnoType())->Spawner_ReturnOnRepairDone)
+	{
+		auto pTarget = abstract_cast<TechnoClass*>(pThis->Target);
+
+		if (pTarget && pTarget->GetHealthPercentage() >= RulesClass::Instance->unknown_double_16F8)
+			return true;
+	}
+
+	return false;
+}
+
+DEFINE_HOOK(0x6B7702, SpawnManagerClass_AI_CheckRepairDone1, 0x5)
+{
+	enum { KeepTarget = 0x6B770D, ResetTarget = 0x6B7663 };
+
+	GET(SpawnManagerClass*, pThis, ESI);
+
+	R->EAX(pThis->Target);
+	return ShouldResetSpawnManagerTarget(pThis) ? ResetTarget : KeepTarget;
+}
+
+DEFINE_HOOK(0x6B7752, SpawnManagerClass_AI_CheckRepairDone2, 0x5)
+{
+	enum { KeepTarget = 0x6B7759, ResetTarget = 0x6B7793 };
+
+	GET(SpawnManagerClass*, pThis, ESI);
+
+	R->EAX(pThis->Target);
+	return ShouldResetSpawnManagerTarget(pThis) ? ResetTarget : KeepTarget;
+}
+
+DEFINE_HOOK(0x6B79BF, SpawnManagerClass_AI_CheckRepairDone3, 0x5)
+{
+	enum { ResetTarget = 0x6B79C4, KeepTarget = 0x6B79D3 };
+	GET(SpawnManagerClass*, pThis, ESI);
+	return ShouldResetSpawnManagerTarget(pThis) ? ResetTarget : KeepTarget;
 }
 
 #pragma endregion
@@ -595,52 +610,6 @@ DEFINE_HOOK(0x74691D, UnitClass_UpdateDisguise_EMP, 0x6)
 
 #pragma endregion
 
-#pragma region AttackMindControlledDelay
-
-bool __fastcall CanAttackMindControlled(TechnoClass* pControlled, TechnoClass* pRetaliator)
-{
-	const auto pMind = pControlled->MindControlledBy;
-
-	if (!pMind || pRetaliator->Berzerk)
-		return true;
-
-	const auto pManager = pMind->CaptureManager;
-
-	if (!pManager || !pRetaliator->Owner->IsAlliedWith(pManager->GetOriginalOwner(pControlled)))
-		return true;
-
-	return TechnoExt::ExtMap.Find(pControlled)->BeControlledThreatFrame <= Unsorted::CurrentFrame;
-}
-
-DEFINE_HOOK(0x7089E8, TechnoClass_AllowedToRetaliate_AttackMindControlledDelay, 0x6)
-{
-	enum { CannotRetaliate = 0x708B17 };
-
-	GET(TechnoClass* const, pThis, ESI);
-	GET(TechnoClass* const, pAttacker, EBP);
-
-	return CanAttackMindControlled(pAttacker, pThis) ? 0 : CannotRetaliate;
-}
-
-DEFINE_HOOK(0x6F88BF, TechnoClass_CanAutoTargetObject_AttackMindControlledDelay, 0x6)
-{
-	enum { CannotSelect = 0x6F894F };
-
-	GET(ObjectClass* const, pTarget, ESI);
-
-	if (const auto pTechno = abstract_cast<TechnoClass*>(pTarget))
-	{
-		GET(TechnoClass* const, pThis, EDI);
-
-		if (!CanAttackMindControlled(pTechno, pThis))
-			return CannotSelect;
-	}
-
-	return 0;
-}
-
-#pragma endregion
-
 #pragma region ExtendedGattlingRateDown
 
 DEFINE_HOOK(0x70DE40, TechnoClass_GattlingValueRateDown_GattlingRateDownDelay, 0xA)
@@ -821,9 +790,9 @@ void __fastcall DisplayClass_Submit_Wrapper(DisplayClass* pThis, discard_t _, Ob
 DEFINE_FUNCTION_JUMP(CALL, 0x54B18E, DisplayClass_Submit_Wrapper);  // JumpjetLocomotionClass_Process
 DEFINE_FUNCTION_JUMP(CALL, 0x4CD4E7, DisplayClass_Submit_Wrapper);  // FlyLocomotionClass_Update
 
-// Fixes SecondaryFire / SecondaryProne sequences not remapping to WetAttack in water.
+// Oct 26, 2024 - Starkku: Fixes SecondaryFire / SecondaryProne sequences not remapping to WetAttack in water.
 // Ideally there would be WetAttackSecondary but adding new sequences would be a big undertaking.
-// Also adds a toggle for not using water sequences at all - Starkku
+// Also adds a toggle for not using water sequences at all
 DEFINE_HOOK(0x51D7E0, InfantryClass_DoAction_Water, 0x5)
 {
 	enum { Continue= 0x51D7EC, SkipWaterSequences = 0x51D842, UseSwim = 0x51D83D, UseWetAttack = 0x51D82F };
