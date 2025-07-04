@@ -1,4 +1,4 @@
-#include "Phobos.h"
+﻿#include "Phobos.h"
 
 #include <Drawing.h>
 #include <SessionClass.h>
@@ -9,8 +9,6 @@
 #include <Utilities/Macro.h>
 #include "Utilities/AresHelper.h"
 #include "Utilities/Parser.h"
-
-#include <Phobos.ECInit.h>
 
 bool Phobos::HideWarning = false;
 bool Phobos::PoweredByEC = false;
@@ -82,6 +80,13 @@ void Phobos::CmdLineParse(char** ppArgs, int nNumArgs)
 			if (boolParser.TryParse(value.c_str(), &v))
 				dontSetExceptionHandler = !v;
 		}
+	}
+
+	if (!Phobos::HideWarning && !Phobos::IsTrialValid() && !Phobos::PoweredByEC)
+	{
+		Debug::Log("Initialized version: " PRODUCT_VERSION " failed! \n");
+		MessageBoxExW(NULL, L"试用期已结束，且未检测到授权！", Phobos::VersionDescription, MB_ICONERROR, 0);
+		FatalExit(0xDEAD);
 	}
 
 	if (foundInclude)
@@ -264,7 +269,6 @@ bool __stdcall DllMain(HANDLE hInstance, DWORD dwReason, LPVOID v)
 	if (dwReason == DLL_PROCESS_ATTACH)
 	{
 		Phobos::hInstance = hInstance;
-		ECInitialize();
 	}
 	return true;
 }
