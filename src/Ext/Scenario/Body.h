@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ScenarioClass.h>
+#include <MessageListClass.h>
 
 #include <Helpers/Macro.h>
 #include <Utilities/Container.h>
@@ -39,6 +40,15 @@ public:
 		bool SWSidebar_Enable;
 		std::vector<int> SWSidebar_Indices;
 
+		std::vector<std::wstring> RecordMessages;
+
+		PhobosFixedString<64u> DefaultLS640BkgdName;
+		PhobosFixedString<64u> DefaultLS800BkgdName;
+		PhobosFixedString<64u> DefaultLS800BkgdPal;
+
+		BulletClass* MasterDetonationBullet; // Used to do warhead/weapon detonations on spot without having to create new BulletClass instance every time.
+		std::vector<TechnoExt::ExtData*> LimboLaunchers;
+
 		ExtData(ScenarioClass* OwnerObject) : Extension<ScenarioClass>(OwnerObject)
 			, ShowBriefing { false }
 			, BriefingTheme { -1 }
@@ -48,6 +58,12 @@ public:
 			, TransportReloaders {}
 			, SWSidebar_Enable { true }
 			, SWSidebar_Indices {}
+			, RecordMessages {}
+			, DefaultLS640BkgdName {}
+			, DefaultLS800BkgdName {}
+			, DefaultLS800BkgdPal {}
+			, MasterDetonationBullet {}
+			, LimboLaunchers {}
 		{ }
 
 		void SetVariableToByID(bool bIsGlobal, int nIndex, char bState);

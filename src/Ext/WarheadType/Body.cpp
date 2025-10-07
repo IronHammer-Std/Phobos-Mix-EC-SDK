@@ -13,13 +13,20 @@ bool WarheadTypeExt::ExtData::CanTargetHouse(HouseClass* pHouse, TechnoClass* pT
 {
 	if (pHouse && pTarget)
 	{
-		if (this->AffectsOwner.Get(this->OwnerObject()->AffectsAllies) && pTarget->Owner == pHouse)
+		const auto pOwner = pTarget->Owner;
+
+		if (!this->AffectsNeutral && pOwner->IsNeutral())
+			return false;
+
+		const auto affectsAllies = this->OwnerObject()->AffectsAllies;
+
+		if (this->AffectsOwner.Get(affectsAllies) && pOwner == pHouse)
 			return true;
 
-		bool isAllies = pHouse->IsAlliedWith(pTarget);
+		const bool isAllies = pHouse->IsAlliedWith(pTarget);
 
-		if (this->OwnerObject()->AffectsAllies && isAllies)
-			return pTarget->Owner != pHouse;
+		if (affectsAllies && isAllies)
+			return pOwner != pHouse;
 
 		if (this->AffectsEnemies && !isAllies)
 			return true;
@@ -32,9 +39,6 @@ bool WarheadTypeExt::ExtData::CanTargetHouse(HouseClass* pHouse, TechnoClass* pT
 
 bool WarheadTypeExt::ExtData::CanAffectTarget(TechnoClass* pTarget) const
 {
-	if (!pTarget)
-		return false;
-
 	if (!IsHealthInThreshold(pTarget))
 		return false;
 
@@ -46,12 +50,10 @@ bool WarheadTypeExt::ExtData::CanAffectTarget(TechnoClass* pTarget) const
 
 bool WarheadTypeExt::ExtData::IsHealthInThreshold(TechnoClass* pTarget) const
 {
-	// Check if the WH should affect the techno target or skip it
-	double hp = pTarget->GetHealthPercentage();
-	bool hpBelowPercent = hp <= this->AffectsBelowPercent;
-	bool hpAbovePercent = hp > this->AffectsAbovePercent;
+	if (!this->HealthCheck)
+		return true;
 
-	return hpBelowPercent && hpAbovePercent;
+	return TechnoExt::IsHealthInThreshold(pTarget, this->AffectsAbovePercent, this->AffectsBelowPercent);
 }
 
 // Checks if Warhead can affect target that might or might be currently invulnerable.
@@ -70,22 +72,7 @@ void WarheadTypeExt::DetonateAt(WarheadTypeClass* pThis, AbstractClass* pTarget,
 
 void WarheadTypeExt::DetonateAt(WarheadTypeClass* pThis, const CoordStruct& coords, TechnoClass* pOwner, int damage, HouseClass* pFiringHouse, AbstractClass* pTarget)
 {
-	BulletTypeClass* pType = BulletTypeExt::GetDefaultBulletType();
-
-	if (BulletClass* pBullet = pType->CreateBullet(pTarget, pOwner,
-		damage, pThis, 0, pThis->Bright))
-	{
-		if (pFiringHouse)
-		{
-			auto const pBulletExt = BulletExt::ExtMap.Find(pBullet);
-			pBulletExt->FirerHouse = pFiringHouse;
-		}
-
-		pBullet->Limbo();
-		pBullet->SetLocation(coords);
-		pBullet->Explode(true);
-		pBullet->UnInit();
-	}
+	BulletExt::Detonate(coords, pOwner, damage, pFiringHouse, pTarget, pThis->Bright, nullptr, pThis);
 }
 
 bool WarheadTypeExt::ExtData::EligibleForFullMapDetonation(TechnoClass* pTechno, HouseClass* pOwner) const
@@ -98,9 +85,8 @@ bool WarheadTypeExt::ExtData::EligibleForFullMapDetonation(TechnoClass* pTechno,
 
 	auto const pType = pTechno->GetTechnoType();
 
-	if ((this->DetonateOnAllMapObjects_AffectTypes.size() > 0 &&
-		!this->DetonateOnAllMapObjects_AffectTypes.Contains(pType)) ||
-		this->DetonateOnAllMapObjects_IgnoreTypes.Contains(pType))
+	if ((this->DetonateOnAllMapObjects_AffectTypes.size() > 0 && !this->DetonateOnAllMapObjects_AffectTypes.Contains(pType))
+		|| this->DetonateOnAllMapObjects_IgnoreTypes.Contains(pType))
 	{
 		return false;
 	}
@@ -118,7 +104,7 @@ bool WarheadTypeExt::ExtData::EligibleForFullMapDetonation(TechnoClass* pTechno,
 DamageAreaResult WarheadTypeExt::ExtData::DamageAreaWithTarget(const CoordStruct& coords, int damage, TechnoClass* pSource, WarheadTypeClass* pWH, bool affectsTiberium, HouseClass* pSourceHouse, TechnoClass* pTarget)
 {
 	this->DamageAreaTarget = pTarget;
-	auto result = MapClass::DamageArea(coords, damage, pSource, pWH, true, pSourceHouse);
+	auto const result = MapClass::DamageArea(coords, damage, pSource, pWH, true, pSourceHouse);
 	this->DamageAreaTarget = nullptr;
 	return result;
 }
@@ -179,7 +165,11 @@ void WarheadTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 	this->Crit_ActiveChanceAnims.Read(exINI, pSection, "Crit.ActiveChanceAnims");
 	this->Crit_AnimOnAffectedTargets.Read(exINI, pSection, "Crit.AnimOnAffectedTargets");
 	this->Crit_AffectBelowPercent.Read(exINI, pSection, "Crit.AffectBelowPercent");
+	this->Crit_AffectAbovePercent.Read(exINI, pSection, "Crit.AffectAbovePercent");
 	this->Crit_SuppressWhenIntercepted.Read(exINI, pSection, "Crit.SuppressWhenIntercepted");
+
+	if (this->Crit_AffectAbovePercent > this->Crit_AffectBelowPercent)
+		Debug::Log("[Developer warning][%s] Crit.AffectsAbovePercent is bigger than Crit.AffectsBelowPercent, crit will never activate!\n", pSection);
 
 	this->MindControl_Anim.Read(exINI, pSection, "MindControl.Anim");
 	this->MindControl_ThreatDelay.Read(exINI, pSection, "MindControl.ThreatDelay");
@@ -202,7 +192,11 @@ void WarheadTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 	this->Shield_Respawn_Amount.Read(exINI, pSection, "Shield.Respawn.Amount");
 	this->Shield_Respawn_Rate_InMinutes.Read(exINI, pSection, "Shield.Respawn.Rate");
 	this->Shield_Respawn_Rate = (int)(this->Shield_Respawn_Rate_InMinutes * 900);
+	this->Shield_Respawn_RestartInCombat.Read(exINI, pSection, "Shield.Respawn.RestartInCombat");
+	this->Shield_Respawn_RestartInCombatDelay.Read(exINI, pSection, "Shield.Respawn.RestartInCombatDelay");
 	this->Shield_Respawn_RestartTimer.Read(exINI, pSection, "Shield.Respawn.RestartTimer");
+	this->Shield_Respawn_Anim.Read(exINI, pSection, "Shield.Respawn.Anim");
+	this->Shield_Respawn_Weapon.Read(exINI, pSection, "Shield.Respawn.Weapon");
 	this->Shield_SelfHealing_Duration.Read(exINI, pSection, "Shield.SelfHealing.Duration");
 	this->Shield_SelfHealing_Amount.Read(exINI, pSection, "Shield.SelfHealing.Amount");
 	this->Shield_SelfHealing_Rate_InMinutes.Read(exINI, pSection, "Shield.SelfHealing.Rate");
@@ -247,6 +241,7 @@ void WarheadTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 	this->DetonateOnAllMapObjects_IgnoreTypes.Read(exINI, pSection, "DetonateOnAllMapObjects.IgnoreTypes");
 
 	this->Parasite_CullingTarget.Read(exINI, pSection, "Parasite.CullingTarget");
+	this->Parasite_GrappleAnim.Read(exINI, pSection, "Parasite.GrappleAnim");
 
 	this->Nonprovocative.Read(exINI, pSection, "Nonprovocative");
 
@@ -258,6 +253,8 @@ void WarheadTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 	this->DamageOwnerMultiplier.Read(exINI, pSection, "DamageOwnerMultiplier");
 	this->DamageAlliesMultiplier.Read(exINI, pSection, "DamageAlliesMultiplier");
 	this->DamageEnemiesMultiplier.Read(exINI, pSection, "DamageEnemiesMultiplier");
+	this->DamageSourceHealthMultiplier.Read(exINI, pSection, "DamageSourceHealthMultiplier");
+	this->DamageTargetHealthMultiplier.Read(exINI, pSection, "DamageTargetHealthMultiplier");
 
 	this->SuppressRevengeWeapons.Read(exINI, pSection, "SuppressRevengeWeapons");
 	this->SuppressRevengeWeapons_Types.Read(exINI, pSection, "SuppressRevengeWeapons.Types");
@@ -285,11 +282,20 @@ void WarheadTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 
 	this->AirstrikeTargets.Read(exINI, pSection, "AirstrikeTargets");
 
-	this->AffectsAbovePercent.Read(exINI, pSection, "AffectsAbovePercent");
 	this->AffectsBelowPercent.Read(exINI, pSection, "AffectsBelowPercent");
+	this->AffectsAbovePercent.Read(exINI, pSection, "AffectsAbovePercent");
+	this->AffectsNeutral.Read(exINI, pSection, "AffectsNeutral");
+	this->HealthCheck = this->AffectsBelowPercent > 0.0 || this->AffectsAbovePercent < 1.0;
 
 	if (this->AffectsAbovePercent > this->AffectsBelowPercent)
 		Debug::Log("[Developer warning][%s] AffectsAbovePercent is bigger than AffectsBelowPercent, the warhead will never activate!\n", pSection);
+
+	this->ReverseEngineer.Read(exINI, pSection, "ReverseEngineer");
+
+	this->UnlimboDetonate.Read(exINI, pSection, "UnlimboDetonate");
+	this->UnlimboDetonate_ForceLocation.Read(exINI, pSection, "UnlimboDetonate.ForceLocation");
+	this->UnlimboDetonate_KeepTarget.Read(exINI, pSection, "UnlimboDetonate.KeepTarget");
+	this->UnlimboDetonate_KeepSelected.Read(exINI, pSection, "UnlimboDetonate.KeepSelected");
 
 	// Convert.From & Convert.To
 	TypeConvertGroup::Parse(this->Convert_Pairs, exINI, pSection, AffectedHouse::All);
@@ -346,6 +352,7 @@ void WarheadTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 		|| this->AttachEffects.RemoveGroups.size() > 0
 		|| this->BuildingSell
 		|| this->BuildingUndeploy
+		|| this->ReverseEngineer
 	);
 
 	char tempBuffer[32];
@@ -436,6 +443,7 @@ void WarheadTypeExt::ExtData::Serialize(T& Stm)
 		.Process(this->Crit_ActiveChanceAnims)
 		.Process(this->Crit_AnimOnAffectedTargets)
 		.Process(this->Crit_AffectBelowPercent)
+		.Process(this->Crit_AffectAbovePercent)
 		.Process(this->Crit_SuppressWhenIntercepted)
 
 		.Process(this->MindControl_Anim)
@@ -456,8 +464,12 @@ void WarheadTypeExt::ExtData::Serialize(T& Stm)
 		.Process(this->Shield_ReceivedDamage_MaxMultiplier)
 		.Process(this->Shield_Respawn_Duration)
 		.Process(this->Shield_Respawn_Amount)
+		.Process(this->Shield_Respawn_RestartInCombat)
+		.Process(this->Shield_Respawn_RestartInCombatDelay)
 		.Process(this->Shield_Respawn_Rate)
 		.Process(this->Shield_Respawn_RestartTimer)
+		.Process(this->Shield_Respawn_Anim)
+		.Process(this->Shield_Respawn_Weapon)
 		.Process(this->Shield_SelfHealing_Duration)
 		.Process(this->Shield_SelfHealing_Amount)
 		.Process(this->Shield_SelfHealing_Rate)
@@ -512,8 +524,10 @@ void WarheadTypeExt::ExtData::Serialize(T& Stm)
 		.Process(this->SuppressReflectDamage_Types)
 		.Process(this->SuppressReflectDamage_Groups)
 
-		.Process(this->AffectsAbovePercent)
 		.Process(this->AffectsBelowPercent)
+		.Process(this->AffectsAbovePercent)
+		.Process(this->AffectsNeutral)
+		.Process(this->HealthCheck)
 
 		.Process(this->InflictLocomotor)
 		.Process(this->RemoveInflictedLocomotor)
@@ -521,8 +535,11 @@ void WarheadTypeExt::ExtData::Serialize(T& Stm)
 		.Process(this->DamageOwnerMultiplier)
 		.Process(this->DamageAlliesMultiplier)
 		.Process(this->DamageEnemiesMultiplier)
+		.Process(this->DamageSourceHealthMultiplier)
+		.Process(this->DamageTargetHealthMultiplier)
 
 		.Process(this->Parasite_CullingTarget)
+		.Process(this->Parasite_GrappleAnim)
 
 		.Process(this->Nonprovocative)
 
@@ -549,6 +566,15 @@ void WarheadTypeExt::ExtData::Serialize(T& Stm)
 
 		.Process(this->AirstrikeTargets)
 
+		.Process(this->CanKill)
+
+		.Process(this->ReverseEngineer)
+
+		.Process(this->UnlimboDetonate)
+		.Process(this->UnlimboDetonate_ForceLocation)
+		.Process(this->UnlimboDetonate_KeepTarget)
+		.Process(this->UnlimboDetonate_KeepSelected)
+
 		// Ares tags
 		.Process(this->AffectsEnemies)
 		.Process(this->AffectsOwner)
@@ -560,8 +586,6 @@ void WarheadTypeExt::ExtData::Serialize(T& Stm)
 		.Process(this->PossibleCellSpreadDetonate)
 		.Process(this->Reflected)
 		.Process(this->DamageAreaTarget)
-
-		.Process(this->CanKill)
 		;
 }
 
