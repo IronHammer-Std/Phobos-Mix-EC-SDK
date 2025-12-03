@@ -29,6 +29,7 @@
 #include <Ext/AnimType/Body.h>
 #include <Ext/SWType/Body.h>
 #include <Ext/WarheadType/Body.h>
+#include <Ext/Cell/Body.h>
 
 #include <Utilities/Macro.h>
 #include <Utilities/Debug.h>
@@ -562,17 +563,19 @@ namespace FetchBomb
 	BombClass* pThisBomb;
 }
 
-// Fetch the BombClass context From earlier adress
+// Fetch the BombClass context From earlier address.
 DEFINE_HOOK(0x438771, BombClass_Detonate_SetContext, 0x6)
 {
 	GET(BombClass*, pThis, ESI);
 
 	FetchBomb::pThisBomb = pThis;
 
-	// Also adjust detonation coordinate.
-	CoordStruct coords = pThis->Target->GetCenterCoords();
+	if (RulesExt::Global()->IvanBombAttachToCenter)
+	{
+		CoordStruct coords = pThis->Target->GetCenterCoords();
+		R->EDX(&coords);
+	}
 
-	R->EDX(&coords);
 	return 0;
 }
 
@@ -608,16 +611,6 @@ static DamageAreaResult __fastcall _BombClass_Detonate_DamageArea
 	return nDamageAreaResult;
 }
 
-DEFINE_HOOK(0x6F5201, TechnoClass_DrawExtras_IvanBombImage, 0x6)
-{
-	GET(TechnoClass*, pThis, EBP);
-
-	auto coords = pThis->GetCenterCoords();
-
-	R->EAX(&coords);
-	return 0;
-}
-
 // skip the Explosion Anim block and clean up the context
 DEFINE_HOOK(0x4387A8, BombClass_Detonate_ExplosionAnimHandled, 0x5)
 {
@@ -627,6 +620,19 @@ DEFINE_HOOK(0x4387A8, BombClass_Detonate_ExplosionAnimHandled, 0x5)
 
 // redirect MapClass::DamageArea call to our dll for additional functionality and checks
 DEFINE_FUNCTION_JUMP(CALL, 0x4387A3, _BombClass_Detonate_DamageArea);
+
+DEFINE_HOOK(0x6F5201, TechnoClass_DrawExtras_IvanBombImage, 0x6)
+{
+	GET(TechnoClass*, pThis, EBP);
+
+	if (RulesExt::Global()->IvanBombAttachToCenter)
+	{
+		auto coords = pThis->GetCenterCoords();
+		R->EAX(&coords);
+	}
+
+	return 0;
+}
 
 // Oct 20, 2022 - Starkku: BibShape checks for BuildingClass::BState which needs to not be 0 (constructing) for bib to draw.
 // It is possible for BState to be 1 early during construction for frame or two which can result in BibShape being drawn during buildup, which somehow depends on length of buildup.
@@ -877,10 +883,19 @@ DEFINE_HOOK(0x6B75AC, SpawnManagerClass_AI_SetDestinationForMissiles, 0x5)
 	GET(SpawnManagerClass*, pSpawnManager, ESI);
 	GET(TechnoClass*, pSpawnTechno, EDI);
 
-	const CoordStruct coord = pSpawnManager->Target->GetCenterCoords();
-	CellClass* pCellDestination = MapClass::Instance.TryGetCellAt(coord);
+	auto const pTarget = pSpawnManager->Target;
 
-	pSpawnTechno->SetDestination(pCellDestination, true);
+	// Oct 27, 2025 - Starkku: Restore old behaviour for building destinations to eliminate inaccuracy issues.
+	if (pTarget->WhatAmI() == AbstractType::Building)
+	{
+		pSpawnTechno->SetDestination(pTarget, true);
+	}
+	else
+	{
+		const CoordStruct coord = pSpawnManager->Target->GetCenterCoords();
+		CellClass* pCellDestination = MapClass::Instance.TryGetCellAt(coord);
+		pSpawnTechno->SetDestination(pCellDestination, true);
+	}
 
 	return 0x6B75BC;
 }
@@ -2663,4 +2678,143 @@ DEFINE_HOOK(0x5194EF, InfantryClass_DrawIt_DrawShadow, 0x5)
 	enum { SkipDraw = 0x51958A };
 	GET(InfantryClass*, pThis, EBP);
 	return pThis->CloakState != CloakState::Uncloaked ? SkipDraw : 0;
+}
+
+// Fix the issue that the jumpjet vehicles cannot stop correctly after going berserk
+DEFINE_HOOK(0x74431F, UnitClass_ReadyToNextMission_HuntCheck, 0x6)
+{
+	GET(UnitClass*, pThis, ESI);
+	return pThis->GetCurrentMission() != Mission::Hunt ? 0 : 0x744329;
+}
+
+#pragma region InfBlockTreeFix
+
+DEFINE_HOOK(0x52182A, InfantryClass_MarkAllOccupationBits_SetOwnerIdx, 0x6)
+{
+	GET(CellClass*, pCell, ESI);
+	CellExt::ExtMap.Find(pCell)->InfantryCount++;
+	return 0;
+}
+
+DEFINE_HOOK(0x5218C2, InfantryClass_UnmarkAllOccupationBits_ResetOwnerIdx, 0x6)
+{
+	enum { Reset = 0x5218CC, NoReset = 0x5218D3 };
+
+	GET(CellClass*, pCell, ESI);
+	GET(DWORD, newFlag, ECX);
+
+	pCell->OccupationFlags = newFlag;
+	auto pExt = CellExt::ExtMap.Find(pCell);
+	pExt->InfantryCount--;
+
+	// Vanilla check only the flag to decide if the InfantryOwnerIndex should be reset. 
+	// But the tree take one of the flag bit. So if a infantry walk through a cell with a tree, the InfantryOwnerIndex won't be reset.
+	return (newFlag & 0x1C) == 0 || pExt->InfantryCount == 0 ? Reset : NoReset;
+}
+
+#pragma endregion
+
+// Vanilla won't swizzle owner house of Particle System when loading, which was fine before
+// But now it might trigger a crash since DamageAllies/Enemies/OwnerMultiplier will check its house
+// Fix it at here for now. If we extend ParticleSystemClass in the future this should be moved to there
+DEFINE_HOOK(0x62FFBB, ParticleSystemClass_Load_OwnerHouse, 0x8)
+{
+	GET(ParticleSystemClass*, pThis, EDI);
+
+	SWIZZLE(pThis->OwnerHouse);
+
+	return 0;
+}
+
+#pragma region LATimeFix
+
+// Skip the LATime set code in wrong place.
+DEFINE_JUMP(LJMP, 0x44227E, 0x4422C1);
+
+// Set the LATime when the building is actually damaged.
+DEFINE_HOOK(0x44242A, BuildingClass_ReceiveDamage_SetLATime, 0x8)
+{
+	GET(BuildingClass* const, pThis, ESI);
+	GET(const DamageState, state, EAX);
+	GET(TechnoClass*, pAttacker, EBP);
+	GET_STACK(HouseClass*, pAttackerHouse, STACK_OFFSET(0x9C, 0x1C));
+
+	auto const pFromHouse = pAttacker ? pAttacker->GetOwningHouse() : pAttackerHouse;
+
+	if (pFromHouse
+		&& state != DamageState::Unaffected
+		&& !pThis->IsStrange()
+		&& !pThis->Owner->IsAlliedWith(pFromHouse))
+	{
+		auto const pOwner = pThis->Owner;
+		pOwner->LATime = Unsorted::CurrentFrame;
+		pOwner->LAEnemy = pFromHouse->ArrayIndex;
+
+		if (pAttacker)
+			pThis->BaseIsAttacked(pAttacker);
+	}
+
+	return 0;
+}
+
+#pragma endregion
+
+DEFINE_HOOK(0x54CC9C, JumpjetLocomotionClass_ProcessCrashing_DropFix, 0x5)
+{
+	enum { SkipGameCode = 0x54CDC3, SkipGameCode2 = 0x54CFB7 };
+
+	GET(ObjectClass* const, pObject, ESI);
+	GET(JumpjetLocomotionClass*, pLoco, EDI);
+	const auto pLinkedTo = pLoco->LinkedTo;
+	bool fallOnSomething = false;
+
+	for (NextObject object(pObject); object; ++object)
+	{
+		if (*object == pLinkedTo)
+			continue;
+
+		const auto whatAmObject = object->WhatAmI();
+
+		if (whatAmObject == UnitClass::AbsID || whatAmObject == BuildingClass::AbsID || whatAmObject == AircraftClass::AbsID)
+		{
+			fallOnSomething = true;
+			continue;
+		}
+
+		if (whatAmObject == InfantryClass::AbsID)
+		{
+			const auto pInfantry = static_cast<InfantryClass*>(*object);
+
+			VocClass::PlayAt(object->GetType()->CrushSound, object->Location);
+
+			if (const auto pManipulater = pLinkedTo->BeingManipulatedBy)
+				pInfantry->RegisterDestruction(pManipulater);
+			else if (const auto pSourceHouse = pLinkedTo->ChronoWarpedByHouse)
+				pInfantry->RegisterKill(pSourceHouse);
+			else
+				pInfantry->RegisterDestruction(pLinkedTo);
+
+			pInfantry->Mark(MarkType::Up);
+			pInfantry->Limbo();
+			pInfantry->UnInit();
+			continue;
+		}
+
+		if (whatAmObject == TerrainClass::AbsID)
+		{
+			const auto pTerrain = static_cast<TerrainClass*>(*object);
+
+			if (pTerrain->Type->Immune)
+				continue;
+		}
+
+		if (const auto pManipulater = pLinkedTo->BeingManipulatedBy)
+			object->ReceiveDamage(&object->Health, 0, RulesClass::Instance->CrushWarhead, pManipulater, true, false, pManipulater->Owner);
+		else if (const auto pSourceHouse = pLinkedTo->ChronoWarpedByHouse)
+			object->ReceiveDamage(&object->Health, 0, RulesClass::Instance->CrushWarhead, pLinkedTo, true, false, pSourceHouse);
+		else
+			object->ReceiveDamage(&object->Health, 0, RulesClass::Instance->CrushWarhead, pLinkedTo, true, false, pLinkedTo->Owner);
+	}
+
+	return fallOnSomething ? SkipGameCode2 : SkipGameCode;
 }
