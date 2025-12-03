@@ -1,15 +1,15 @@
 ﻿#pragma once
 
-#include "PhobosActualTrajectory.h"
+#include "../PhobosActualTrajectory.h"
 
-enum class ParabolaFireMode : int
+enum class ParabolaFireMode : unsigned char
 {
 	Speed = 0,
 	Height = 1,
 	Angle = 2,
 	SpeedAndHeight = 3,
 	HeightAndAngle = 4,
-	SpeedAndAngle = 5,
+	SpeedAndAngle = 5
 };
 
 class ParabolaTrajectoryType final : public ActualTrajectoryType
@@ -53,20 +53,21 @@ private:
 class ParabolaTrajectory final : public ActualTrajectory
 {
 public:
+	static constexpr int Attempts = 10;
+	static constexpr double Delta = 1e-5;
+
 	ParabolaTrajectory(noinit_t) { }
-	ParabolaTrajectory(ParabolaTrajectoryType const* trajType, BulletClass* pBullet)
-		: ActualTrajectory(trajType, pBullet)
-		, Type { trajType }
-		, ThrowHeight { trajType->ThrowHeight > 0 ? trajType->ThrowHeight : 600 }
-		, BounceTimes { trajType->BounceTimes }
-		, ShouldBounce { false }
+	ParabolaTrajectory(ParabolaTrajectoryType const* pTrajType, BulletClass* pBullet)
+		: ActualTrajectory(pTrajType, pBullet)
+		, Type { pTrajType }
+		, ThrowHeight { pTrajType->ThrowHeight > 0 ? pTrajType->ThrowHeight : 600 }
+		, BounceTimes { pTrajType->BounceTimes }
 		, LastVelocity {}
 	{ }
 
 	const ParabolaTrajectoryType* Type;
 	int ThrowHeight;
 	int BounceTimes;
-	bool ShouldBounce;
 	BulletVelocity LastVelocity;
 
 	virtual bool Load(PhobosStreamReader& Stm, bool RegisterForChange) override;
@@ -100,12 +101,18 @@ private:
 		if (const auto pCell = MapClass::Instance.TryGetCellAt(CellStruct{ X, Y }))
 		{
 			const auto cellHeight = pCell->Level * Unsorted::LevelHeight;
+
 			// (384 -> (4 * Unsorted::LevelHeight - 32(error range)))
 			if (bulletHeight < cellHeight && (cellHeight - lastCellHeight) > 384)
 				return true;
 		}
 
 		return false;
+	}
+
+	static constexpr double SqrtConstexpr(double x, double curr = 1.0, double prev = 0.0)
+	{
+		return curr == prev ? curr : SqrtConstexpr(x, 0.5 * (curr + x / curr), curr);
 	}
 
 	template <typename T>

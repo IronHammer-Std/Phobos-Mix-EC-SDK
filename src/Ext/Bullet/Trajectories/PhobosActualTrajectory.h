@@ -2,6 +2,28 @@
 
 #include "PhobosTrajectory.h"
 
+#include <Ext/Bullet/Body.h>
+
+/*
+	Base class: Actual Trajectory
+
+	- The trajectory itself is an attacking object
+	- Used to share the properties/functions
+
+	- for:
+		- Straight
+		- Bombard
+		- Missile
+		- Parabola
+*/
+
+enum class TrajectoryWaitStatus : unsigned char
+{
+	NowReady = 0,
+	NextFrame = 1,
+	JustUnlimbo = 2,
+};
+
 class ActualTrajectoryType : public PhobosTrajectoryType
 {
 public:
@@ -42,15 +64,15 @@ class ActualTrajectory : public PhobosTrajectory
 {
 public:
 	ActualTrajectory() { }
-	ActualTrajectory(ActualTrajectoryType const* trajType, BulletClass* pBullet)
-		: PhobosTrajectory(trajType, pBullet)
+	ActualTrajectory(ActualTrajectoryType const* pTrajType, BulletClass* pBullet)
+		: PhobosTrajectory(pTrajType, pBullet)
 		, LastTargetCoord { CoordStruct::Empty }
-		, WaitOneFrame { 0 }
+		, WaitStatus { TrajectoryWaitStatus::NowReady }
 	{ }
 
 	// TODO If we could calculate this before firing, perhaps it can solve the problem of one frame delay and not so correct turret orientation.
 	CoordStruct LastTargetCoord; // The target is located in the previous frame, used to calculate the lead time
-	int WaitOneFrame; // Attempts to launch when update
+	TrajectoryWaitStatus WaitStatus; // Attempts to launch when update
 
 	virtual bool Load(PhobosStreamReader& Stm, bool RegisterForChange) override;
 	virtual bool Save(PhobosStreamWriter& Stm) const override;
@@ -67,7 +89,7 @@ public:
 			pBullet->Range -= Game::F2I(this->MovingSpeed);
 
 			if (pBullet->Range <= 0)
-				this->ShouldDetonate = true;
+				BulletExt::ExtMap.Find(pBullet)->Status |= TrajectoryStatus::Detonate;
 		}
 	}
 	inline double GetLeadTime(const double defaultTime)

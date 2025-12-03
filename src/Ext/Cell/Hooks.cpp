@@ -1,8 +1,9 @@
-﻿#include "Body.h"
+#include "Body.h"
 
+#include <Ext/Scenario/Body.h>
 #include <Ext/Techno/Body.h>
 
-void __fastcall UnitClass_SetOccupyBit_Reimpl(UnitClass* pThis, discard_t, CoordStruct* pCrd)
+void __fastcall UnitClass_SetOccupyBit_Reimpl(UnitClass* pThis, void*, CoordStruct* pCrd)
 {
 	if (TechnoExt::DoesntOccupyCellAsChild(pThis))
 		return;
@@ -51,7 +52,7 @@ void __fastcall UnitClass_SetOccupyBit_Reimpl(UnitClass* pThis, discard_t, Coord
 }
 DEFINE_FUNCTION_JUMP(VTABLE, 0x7F5D60, UnitClass_SetOccupyBit_Reimpl);
 
-void __fastcall UnitClass_ClearOccupyBit_Reimpl(UnitClass* pThis, discard_t, CoordStruct* pCrd)
+void __fastcall UnitClass_ClearOccupyBit_Reimpl(UnitClass* pThis, void*, CoordStruct* pCrd)
 {
 	if (TechnoExt::DoesntOccupyCellAsChild(pThis))
 		return;
@@ -90,8 +91,39 @@ DEFINE_FUNCTION_JUMP(VTABLE, 0x7F5D64, UnitClass_ClearOccupyBit_Reimpl);
 
 // TODO ^ same for TA for non-UnitClass, not needed so cba for now
 
-DEFINE_HOOK(0x480E27, CellClass_DamageWall_DamageWallRecursivly, 0x5)
+#pragma region SmudgeTrans
+
+DEFINE_HOOK(0x6B60DE, SmudgeTypeClass_Mark_SetContext, 0x6)
 {
-	enum { SkipGameCode = 0x480EBC };
-	return RulesExt::Global()->DamageWallRecursivly ? 0 : SkipGameCode;
+	GET(CellClass* const, pCell, EAX);
+
+	ScenarioExt::Global()->Smudges.insert(MapClass::GetCellIndex(pCell->MapCoords));
+	const auto pCellExt = CellExt::ExtMap.Find(pCell);
+	pCellExt->SmudgeGenerate = Unsorted::CurrentFrame;
+	pCellExt->SmudgeState = BlitterFlags::None;
+
+	return 0;
+}
+
+DEFINE_HOOK(0x6B56AC, SmudgeTypeClass_DrawIt_DrawTrans, 0x5)
+{
+	GET(CellClass* const, pCell, ESI);
+	REF_STACK(BlitterFlags, flags, STACK_OFFSET(0x3C, -0x3C));
+
+	flags |= CellExt::ExtMap.Find(pCell)->SmudgeState;
+
+	return 0;
+}
+
+#pragma endregion
+
+DEFINE_HOOK(0x480EA8, CellClass_DamageWall_AdjacentWallDamage, 0x7)
+{
+	enum{ SkipGameCode = 0x480EB4 };
+
+	GET(CellClass*, pThis, EAX);
+
+	pThis->DamageWall(RulesExt::Global()->AdjacentWallDamage);
+
+	return SkipGameCode;
 }

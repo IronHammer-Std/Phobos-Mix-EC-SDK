@@ -1,17 +1,14 @@
 ﻿#include "Body.h"
 
-#include <TacticalClass.h>
+#include <VoxClass.h>
 #include <RadarEventClass.h>
+#include <TacticalClass.h>
 
 #include <Ext/WarheadType/Body.h>
 #include <Ext/WeaponType/Body.h>
 #include <Ext/TEvent/Body.h>
 #include <Ext/House/Body.h>
 #include <Ext/Rules/Body.h>
-
-#include <VoxClass.h>
-#include <RadarEventClass.h>
-#include <TacticalClass.h>
 
 namespace ReceiveDamageTemp
 {
@@ -24,27 +21,47 @@ DEFINE_HOOK(0x701900, TechnoClass_ReceiveDamage_Shield, 0x6)
 	GET(TechnoClass*, pThis, ECX);
 	LEA_STACK(args_ReceiveDamage*, args, 0x4);
 
-	const auto pRules = RulesExt::Global();
+	const auto pWHExt = WarheadTypeExt::ExtMap.Find(args->WH);
+	int& damage = *args->Damage;
+
+	// AffectsAbove/BelowPercent & AffectsNeutral can ignore IgnoreDefenses like AffectsAllies/Enmies/Owner
+	// They should be checked here to cover all cases that directly use ReceiveDamage to deal damage
+	if (!pWHExt->IsHealthInThreshold(pThis) || (!pWHExt->AffectsNeutral && pThis->Owner->IsNeutral()))
+	{
+		damage = 0;
+		return 0;
+	}
+
 	const auto pExt = TechnoExt::ExtMap.Find(pThis);
 	const auto pTypeExt = pExt->TypeExtData;
 	const auto pType = pTypeExt->OwnerObject();
-	const auto pWHExt = WarheadTypeExt::ExtMap.Find(args->WH);
 
 	const auto pSourceHouse = args->SourceHouse;
 	const auto pTargetHouse = pThis->Owner;
-	int& damage = *args->Damage;
 
 	// Calculate Damage Multiplier
 	if (!args->IgnoreDefenses && damage)
 	{
 		double multiplier = 1.0;
 
-		if (!pSourceHouse || !pTargetHouse || !pSourceHouse->IsAlliedWith(pTargetHouse))
-			multiplier = pWHExt->DamageEnemiesMultiplier.Get(pRules->DamageEnemiesMultiplier);
-		else if (pSourceHouse != pTargetHouse)
-			multiplier = pWHExt->DamageAlliesMultiplier.Get(pRules->DamageAlliesMultiplier);
+		if (args->Attacker && args->Attacker->Berzerk)
+		{
+			if (!pSourceHouse || !pTargetHouse || !pSourceHouse->IsAlliedWith(pTargetHouse))
+				multiplier = pWHExt->DamageEnemiesMultiplier_Berzerk.Get(RulesExt::Global()->DamageEnemiesMultiplier_Berzerk.Get(RulesExt::Global()->DamageEnemiesMultiplier));
+			else if (pSourceHouse != pTargetHouse)
+				multiplier = pWHExt->DamageAlliesMultiplier_Berzerk.Get(RulesExt::Global()->DamageAlliesMultiplier_Berzerk.Get(!pWHExt->AffectsEnemies ? RulesExt::Global()->DamageAlliesMultiplier_NotAffectsEnemies.Get(RulesExt::Global()->DamageAlliesMultiplier) : RulesExt::Global()->DamageAlliesMultiplier));
+			else
+				multiplier = pWHExt->DamageOwnerMultiplier_Berzerk.Get(RulesExt::Global()->DamageOwnerMultiplier_Berzerk.Get(!pWHExt->AffectsEnemies ? RulesExt::Global()->DamageOwnerMultiplier_NotAffectsEnemies.Get(RulesExt::Global()->DamageOwnerMultiplier) : RulesExt::Global()->DamageOwnerMultiplier));
+		}
 		else
-			multiplier = pWHExt->DamageOwnerMultiplier.Get(pRules->DamageOwnerMultiplier);
+		{
+			if (!pSourceHouse || !pTargetHouse || !pSourceHouse->IsAlliedWith(pTargetHouse))
+				multiplier = pWHExt->DamageEnemiesMultiplier.Get(RulesExt::Global()->DamageEnemiesMultiplier);
+			else if (pSourceHouse != pTargetHouse)
+				multiplier = pWHExt->DamageAlliesMultiplier.Get(!pWHExt->AffectsEnemies ? RulesExt::Global()->DamageAlliesMultiplier_NotAffectsEnemies.Get(RulesExt::Global()->DamageAlliesMultiplier) : RulesExt::Global()->DamageAlliesMultiplier);
+			else
+				multiplier = pWHExt->DamageOwnerMultiplier.Get(!pWHExt->AffectsEnemies ? RulesExt::Global()->DamageOwnerMultiplier_NotAffectsEnemies.Get(RulesExt::Global()->DamageOwnerMultiplier) : RulesExt::Global()->DamageOwnerMultiplier);
+		}
 
 		if (pWHExt->DamageSourceHealthMultiplier && args->Attacker)
 			multiplier += pWHExt->DamageSourceHealthMultiplier * args->Attacker->GetHealthPercentage();
@@ -81,28 +98,28 @@ DEFINE_HOOK(0x701900, TechnoClass_ReceiveDamage_Shield, 0x6)
 	{
 		auto raiseCombatAlert = [&]()
 		{
-			if (!pTargetHouse->IsControlledByCurrentPlayer() || (pRules->CombatAlert_SuppressIfAllyDamage && pTargetHouse->IsAlliedWith(pSourceHouse)))
+			if (!pTargetHouse->IsControlledByCurrentPlayer() || (RulesExt::Global()->CombatAlert_SuppressIfAllyDamage && pTargetHouse->IsAlliedWith(pSourceHouse)))
 				return;
 
 			const auto pHouseExt = HouseExt::ExtMap.Find(pTargetHouse);
 
 			if (pHouseExt->CombatAlertTimer.HasTimeLeft() || pWHExt->CombatAlert_Suppress.Get(!pWHExt->Malicious || pWHExt->Nonprovocative))
 				return;
-			else if (!pTypeExt->CombatAlert.Get(pRules->CombatAlert_Default.Get(!pType->Insignificant && !pType->Spawned)) || !pThis->IsInPlayfield)
+			else if (!pTypeExt->CombatAlert.Get(RulesExt::Global()->CombatAlert_Default.Get(!pType->Insignificant && !pType->Spawned)) || !pThis->IsInPlayfield)
 				return;
 
-			if (pRules->CombatAlert_IgnoreBuilding)
+			if (RulesExt::Global()->CombatAlert_IgnoreBuilding)
 			{
 				if (const auto pBuilding = abstract_cast<BuildingClass*, true>(pThis))
 				{
-					if (!pTypeExt->CombatAlert_NotBuilding.Get(pBuilding->Type->IsVehicle()))
+					if (pTypeExt->CombatAlert_NotBuilding.isset() ? !pTypeExt->CombatAlert_NotBuilding.Get() : !pBuilding->Type->IsVehicle())
 						return;
 				}
 			}
 
 			const auto coordInMap = pThis->GetCoords();
 
-			if (pRules->CombatAlert_SuppressIfInScreen)
+			if (RulesExt::Global()->CombatAlert_SuppressIfInScreen)
 			{
 				const auto pTactical = TacticalClass::Instance;
 				const auto coordInScreen = pTactical->CoordsToScreen(coordInMap) - pTactical->TacticalPos;
@@ -112,24 +129,24 @@ DEFINE_HOOK(0x701900, TechnoClass_ReceiveDamage_Shield, 0x6)
 					return;
 			}
 
-			pHouseExt->CombatAlertTimer.Start(pRules->CombatAlert_Interval);
+			pHouseExt->CombatAlertTimer.Start(RulesExt::Global()->CombatAlert_Interval);
 			RadarEventClass::Create(RadarEventType::Combat, CellClass::Coord2Cell(coordInMap));
 			int index = -1;
 
-			if (!pRules->CombatAlert_MakeAVoice) // No one want to play two sound at a time, I guess?
+			if (!RulesExt::Global()->CombatAlert_MakeAVoice) // No one want to play two sound at a time, I guess?
 				return;
-			else if (pTypeExt->CombatAlert_UseFeedbackVoice.Get(pRules->CombatAlert_UseFeedbackVoice) && pType->VoiceFeedback.Count > 0) // Use VoiceFeedback first
+			else if (pTypeExt->CombatAlert_UseFeedbackVoice.Get(RulesExt::Global()->CombatAlert_UseFeedbackVoice) && pType->VoiceFeedback.Count > 0) // Use VoiceFeedback first
 				VocClass::PlayGlobal(pType->VoiceFeedback.GetItem(0), 0x2000, 1.0);
-			else if (pTypeExt->CombatAlert_UseAttackVoice.Get(pRules->CombatAlert_UseAttackVoice) && pType->VoiceAttack.Count > 0) // Use VoiceAttack then
+			else if (pTypeExt->CombatAlert_UseAttackVoice.Get(RulesExt::Global()->CombatAlert_UseAttackVoice) && pType->VoiceAttack.Count > 0) // Use VoiceAttack then
 				VocClass::PlayGlobal(pType->VoiceAttack.GetItem(0), 0x2000, 1.0);
-			else if (pTypeExt->CombatAlert_UseEVA.Get(pRules->CombatAlert_UseEVA)) // Use Eva finally
+			else if (pTypeExt->CombatAlert_UseEVA.Get(RulesExt::Global()->CombatAlert_UseEVA)) // Use Eva finally
 				index = pTypeExt->CombatAlert_EVA.Get(VoxClass::FindIndex((const char*)"EVA_UnitsInCombat"));
 
 			if (index != -1)
 				VoxClass::PlayIndex(index);
 		};
 
-		if (pRules->CombatAlert)
+		if (RulesExt::Global()->CombatAlert)
 			raiseCombatAlert();
 
 		if (pWHExt->CanTargetHouse(pSourceHouse, pThis))
@@ -163,6 +180,10 @@ DEFINE_HOOK(0x701900, TechnoClass_ReceiveDamage_Shield, 0x6)
 
 				if (nDamageLeft == 0)
 					ReceiveDamageTemp::SkipLowDamageCheck = true;
+			}
+			else if (!pShieldData->IsAvailable() || pShieldData->GetHP() <= 0)
+			{
+				pShieldData->SetRespawnRestartInCombat();
 			}
 		}
 
@@ -204,7 +225,7 @@ DEFINE_HOOK(0x702819, TechnoClass_ReceiveDamage_Decloak, 0xA)
 	GET(TechnoClass* const, pThis, ESI);
 	GET_STACK(WarheadTypeClass*, pWarhead, STACK_OFFSET(0xC4, 0xC));
 
-	if (auto pExt = WarheadTypeExt::ExtMap.Find(pWarhead))
+	if (auto const pExt = WarheadTypeExt::ExtMap.TryFind(pWarhead))
 	{
 		if (pExt->DecloakDamagedTargets.Get(RulesExt::Global()->DecloakDamagedTargets))
 			pThis->Uncloak(false);
@@ -227,9 +248,12 @@ DEFINE_HOOK(0x701DFF, TechnoClass_ReceiveDamage_FlyingStrings, 0x7)
 	{
 		const auto pType = pThis->GetTechnoType();
 		const auto pTypeExt = TechnoTypeExt::ExtMap.Find(pType);
+		const auto& vec = pTypeExt->WreckageType;
 
-		if (const auto pWreckageType = pTypeExt->WreckageType)
+		if (!vec.empty())
 		{
+			const auto pWreckageType = vec[ScenarioClass::Instance->Random.RandomRanged(0, (vec.size() - 1))];
+
 			if ((pThis->GetCell()->LandType != LandType::Water || pTypeExt->WreckageLeaveOnWater)
 				&& (!pThis->IsInAir() || pTypeExt->WreckageLeaveInAir)
 				&& (pWreckageType != pType || !TechnoExt::ExtMap.Find(pThis)->IsWreckage))
@@ -327,12 +351,11 @@ DEFINE_HOOK(0x518505, InfantryClass_ReceiveDamage_NotHuman, 0x4)
 
 	if (receiveDamageArgs.WH)
 	{
-		if (auto const pWarheadExt = WarheadTypeExt::ExtMap.Find(receiveDamageArgs.WH))
-		{
-			int whSequence = pWarheadExt->NotHuman_DeathSequence.Get();
-			if (whSequence > 0)
-				resultSequence = Math::min(Die(whSequence), Die(5));
-		}
+		auto const pWarheadExt = WarheadTypeExt::ExtMap.Find(receiveDamageArgs.WH);
+		const int whSequence = pWarheadExt->NotHuman_DeathSequence.Get();
+
+		if (whSequence > 0)
+			resultSequence = Math::min(Die(whSequence), Die(5));
 	}
 
 	R->ECX(pThis);
@@ -387,7 +410,7 @@ DEFINE_HOOK(0x702050, TechnoClass_ReceiveDamage_AttachEffectExpireWeapon, 0x6)
 DEFINE_HOOK(0x701E18, TechnoClass_ReceiveDamage_ReflectDamage, 0x7)
 {
 	GET(TechnoClass*, pThis, ESI);
-	GET(int*, pDamage, EBX);
+	GET(const int*, pDamage, EBX);
 	GET_STACK(TechnoClass*, pSource, STACK_OFFSET(0xC4, 0x10));
 	GET_STACK(HouseClass*, pSourceHouse, STACK_OFFSET(0xC4, 0x1C));
 	GET_STACK(WarheadTypeClass*, pWarhead, STACK_OFFSET(0xC4, 0xC));
@@ -401,12 +424,16 @@ DEFINE_HOOK(0x701E18, TechnoClass_ReceiveDamage_ReflectDamage, 0x7)
 		return 0;
 
 	auto const pExt = TechnoExt::ExtMap.Find(pThis);
-	const bool suppressByType = pWHExt->SuppressReflectDamage_Types.size() > 0;
-	const bool suppressByGroup = pWHExt->SuppressReflectDamage_Groups.size() > 0;
+	auto& random = ScenarioClass::Instance->Random;
+	const auto& suppressType = pWHExt->SuppressReflectDamage_Types;
+	const auto& suppressGroup = pWHExt->SuppressReflectDamage_Groups;
+	const bool suppress = pWHExt->SuppressReflectDamage;
+	const bool suppressByType = suppressType.size() > 0;
+	const bool suppressByGroup = suppressGroup.size() > 0;
 
-	if (pExt->AE.ReflectDamage && *pDamage > 0 && (!pWHExt->SuppressReflectDamage || suppressByType || suppressByGroup))
+	if (pExt->AE.ReflectDamage && *pDamage > 0 && (!suppress || suppressByType || suppressByGroup))
 	{
-		for (auto& attachEffect : pExt->AttachedEffects)
+		for (auto const& attachEffect : pExt->AttachedEffects)
 		{
 			if (!attachEffect->IsActive())
 				continue;
@@ -416,15 +443,15 @@ DEFINE_HOOK(0x701E18, TechnoClass_ReceiveDamage_ReflectDamage, 0x7)
 			if (!pType->ReflectDamage)
 				continue;
 
-			if (pType->ReflectDamage_Chance < ScenarioClass::Instance->Random.RandomDouble())
+			if (pType->ReflectDamage_Chance < random.RandomDouble())
 				continue;
 
-			if (pWHExt->SuppressReflectDamage)
+			if (suppress)
 			{
-				if (suppressByType && pWHExt->SuppressReflectDamage_Types.Contains(pType))
+				if (suppressByType && suppressType.Contains(pType))
 					continue;
 
-				if (suppressByGroup && pType->HasGroups(pWHExt->SuppressReflectDamage_Groups, false))
+				if (suppressByGroup && pType->HasGroups(suppressGroup, false))
 					continue;
 			}
 
@@ -464,4 +491,19 @@ DEFINE_HOOK(0x701E18, TechnoClass_ReceiveDamage_ReflectDamage, 0x7)
 	}
 
 	return 0;
+}
+
+DEFINE_HOOK(0x5F5480, ObjectClass_ReceiveDamage_FlashDuration, 0x6)
+{
+	enum { SkipGameCode = 0x5F548C };
+
+	GET(ObjectClass*, pThis, ESI);
+	GET_STACK(WarheadTypeClass* const, pWH, STACK_OFFSET(0x24, 0xC));
+
+	const int flashDuration = pWH ? WarheadTypeExt::ExtMap.Find(pWH)->Flash_Duration.Get(7) : 7;
+
+	if (flashDuration > 0)
+		pThis->Flash(flashDuration);
+
+	return SkipGameCode;
 }

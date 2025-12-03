@@ -27,8 +27,61 @@ public:
 		Valueable<WeaponTypeClass*> Interceptable_WeaponOverride;
 		ValueableIdxVector<LaserTrailTypeClass> LaserTrail_Types;
 		Nullable<double> Gravity;
+		Valueable<bool> Vertical_AircraftFix;
+		Nullable<bool> VerticalInitialFacing;
 
 		TrajectoryTypePointer TrajectoryType;
+
+		Valueable<int> LifeDuration;
+		Valueable<int> NoTargetLifeTime;
+		Valueable<int> CreateCapacity;
+		Valueable<int> RetargetInterval;
+		Valueable<double> RetargetRadius;
+		Valueable<AffectedHouse> RetargetHouses;
+		Valueable<bool> Synchronize;
+		Nullable<bool> PeacefulVanish;
+		Valueable<bool> ApplyRangeModifiers;
+		Valueable<bool> UseDisperseCoord;
+
+		Valueable<bool> PassDetonate;
+		Valueable<bool> PassDetonateLocal;
+		Valueable<WarheadTypeClass*> PassDetonateWarhead;
+		Nullable<int> PassDetonateDamage;
+		Valueable<int> PassDetonateDelay;
+		Valueable<int> PassDetonateInitialDelay;
+		Valueable<int> ProximityImpact;
+		Valueable<WarheadTypeClass*> ProximityWarhead;
+		Nullable<int> ProximityDamage;
+		Valueable<Leptons> ProximityRadius;
+		Valueable<bool> ProximityDirect;
+		Valueable<bool> ProximityMedial;
+		Valueable<bool> ProximityAllies;
+		Valueable<bool> ProximityFlight;
+		Valueable<bool> ProximitySphere;
+		Valueable<bool> ThroughVehicles;
+		Valueable<bool> ThroughBuilding;
+		Valueable<double> DamageEdgeAttenuation;
+		Valueable<double> DamageCountAttenuation;
+
+		ValueableVector<WeaponTypeClass*> DisperseWeapons;
+		ValueableVector<int> DisperseBursts;
+		ValueableVector<int> DisperseCounts;
+		ValueableVector<int> DisperseDelays;
+		Valueable<int> DisperseCycle;
+		Valueable<int> DisperseInitialDelay;
+		Valueable<Leptons> DisperseEffectiveRange;
+		Valueable<bool> DisperseSeparate;
+		Valueable<bool> DisperseRetarget;
+		Valueable<bool> DisperseLocation;
+		Valueable<bool> DisperseTendency;
+		Valueable<bool> DisperseHolistic;
+		Valueable<bool> DisperseMarginal;
+		Valueable<bool> DisperseDoRepeat;
+		Valueable<bool> DisperseSuicide;
+		Nullable<bool> DisperseFromFirer;
+		Valueable<bool> DisperseFaceCheck;
+		Valueable<bool> DisperseForceFire;
+		Valueable<CoordStruct> DisperseCoord;
 
 		Valueable<bool> Shrapnel_AffectsGround;
 		Valueable<bool> Shrapnel_AffectsBuildings;
@@ -48,7 +101,6 @@ public:
 
 		Valueable<bool> SubjectToGround;
 
-		Valueable<bool> AU;
 		Valueable<bool> BallisticScatter_IncreaseByRange;
 		Nullable<Leptons> BallisticScatter_MinRange;
 		Nullable<Leptons> BallisticScatter_MaxRange;
@@ -75,7 +127,12 @@ public:
 		Valueable<Leptons> AirburstWeapon_SourceScatterMin;
 		Valueable<Leptons> AirburstWeapon_SourceScatterMax;
 
-		Valueable<AnimTypeClass*> BombParachute;
+		Valueable<bool> Parachuted;
+		Valueable<int> Parachuted_FallRate;
+		Nullable<int> Parachuted_MaxFallRate;
+		Nullable<AnimTypeClass*> BombParachute;
+
+		Valueable<bool> AU;
 
 		// Ares 0.1
 		Valueable<bool> SubjectToSolid;
@@ -91,7 +148,57 @@ public:
 			, Interceptable_WeaponOverride {}
 			, LaserTrail_Types {}
 			, Gravity {}
+			, Vertical_AircraftFix { true }
+			, VerticalInitialFacing {}
 			, TrajectoryType { }
+			, LifeDuration { 0 }
+			, NoTargetLifeTime { -1 }
+			, CreateCapacity { -1 }
+			, RetargetInterval { 1 }
+			, RetargetRadius { 0 }
+			, RetargetHouses { AffectedHouse::Enemies }
+			, Synchronize { false }
+			, PeacefulVanish {}
+			, ApplyRangeModifiers { false }
+			, UseDisperseCoord { false }
+			, PassDetonate { false }
+			, PassDetonateLocal { false }
+			, PassDetonateWarhead {}
+			, PassDetonateDamage {}
+			, PassDetonateDelay { 1 }
+			, PassDetonateInitialDelay { 0 }
+			, ProximityImpact { 0 }
+			, ProximityWarhead {}
+			, ProximityDamage {}
+			, ProximityRadius { Leptons(179) }
+			, ProximityDirect { false }
+			, ProximityMedial { false }
+			, ProximityAllies { false }
+			, ProximityFlight { false }
+			, ProximitySphere { true }
+			, ThroughVehicles { true }
+			, ThroughBuilding { true }
+			, DamageEdgeAttenuation { 1.0 }
+			, DamageCountAttenuation { 1.0 }
+			, DisperseWeapons {}
+			, DisperseBursts {}
+			, DisperseCounts {}
+			, DisperseDelays {}
+			, DisperseCycle { 0 }
+			, DisperseInitialDelay { 0 }
+			, DisperseEffectiveRange { Leptons(0) }
+			, DisperseSeparate { false }
+			, DisperseRetarget { false }
+			, DisperseLocation { false }
+			, DisperseTendency { false }
+			, DisperseHolistic { false }
+			, DisperseMarginal { false }
+			, DisperseDoRepeat { false }
+			, DisperseSuicide { true }
+			, DisperseFromFirer {}
+			, DisperseFaceCheck { false }
+			, DisperseForceFire { true }
+			, DisperseCoord { CoordStruct::Empty }
 			, Shrapnel_AffectsGround { false }
 			, Shrapnel_AffectsBuildings { false }
 			, Shrapnel_UseWeaponTargeting { false }
@@ -109,7 +216,6 @@ public:
 			, ReturnWeapon_ApplyFirepowerMult { false }
 			, SubjectToSolid { false }
 			, SubjectToGround { false }
-			, AU { false }
 			, BallisticScatter_IncreaseByRange { false }
 			, BallisticScatter_MinRange {}
 			, BallisticScatter_MaxRange {}
@@ -134,7 +240,11 @@ public:
 			, AirburstWeapon_ApplyFirepowerMult { false }
 			, AirburstWeapon_SourceScatterMin { Leptons(0) }
 			, AirburstWeapon_SourceScatterMax { Leptons(0) }
-			, BombParachute { }
+			, Parachuted { false }
+			, Parachuted_FallRate { 1 }
+			, Parachuted_MaxFallRate {}
+			, BombParachute {}
+			, AU { false }
 		{ }
 
 		virtual ~ExtData() = default;

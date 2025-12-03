@@ -1,21 +1,22 @@
 ﻿#include <Ext/CaptureManager/Body.h>
 #include <Ext/WarheadType/Body.h>
+#include <Ext/Building/Body.h>
 
 static void TransferMindControlOnDeploy(TechnoClass* pTechnoFrom, TechnoClass* pTechnoTo)
 {
-	auto pAnimType = pTechnoFrom->MindControlRingAnim
+	const auto pAnimType = pTechnoFrom->MindControlRingAnim
 		? pTechnoFrom->MindControlRingAnim->Type
 		: TechnoExt::ExtMap.Find(pTechnoFrom)->MindControlRingAnimType;
 
-	if (auto Controller = pTechnoFrom->MindControlledBy)
+	if (const auto Controller = pTechnoFrom->MindControlledBy)
 	{
-		if (auto Manager = Controller->CaptureManager)
+		if (const auto Manager = Controller->CaptureManager)
 		{
 			CaptureManagerExt::FreeUnit(Manager, pTechnoFrom, true);
 
 			if (CaptureManagerExt::CaptureUnit(Manager, pTechnoTo, false, pAnimType, true))
 			{
-				if (auto pBld = abstract_cast<BuildingClass*, true>(pTechnoTo))
+				if (const auto pBld = abstract_cast<BuildingClass*, true>(pTechnoTo))
 				{
 					// Capturing the building after unlimbo before buildup has finished or even started appears to throw certain things off,
 					// Hopefully this is enough to fix most of it like anims playing prematurely etc.
@@ -37,7 +38,7 @@ static void TransferMindControlOnDeploy(TechnoClass* pTechnoFrom, TechnoClass* p
 			}
 		}
 	}
-	else if (auto MCHouse = pTechnoFrom->MindControlledByHouse)
+	else if (const auto MCHouse = pTechnoFrom->MindControlledByHouse)
 	{
 		pTechnoTo->MindControlledByHouse = MCHouse;
 		pTechnoFrom->MindControlledByHouse = nullptr;
@@ -46,14 +47,14 @@ static void TransferMindControlOnDeploy(TechnoClass* pTechnoFrom, TechnoClass* p
 	{
 		pTechnoTo->MindControlledByAUnit = true;
 
-		auto const pBuilding = abstract_cast<BuildingClass*, true>(pTechnoTo);
+		const auto pBuilding = abstract_cast<BuildingClass*, true>(pTechnoTo);
 		CoordStruct location = pTechnoTo->GetCoords();
 
 		location.Z += pBuilding
 			? pBuilding->Type->Height * Unsorted::LevelHeight
 			: pTechnoTo->GetTechnoType()->MindControlRingOffset;
 
-		auto const pAnim = pAnimType
+		const auto pAnim = pAnimType
 			? GameCreate<AnimClass>(pAnimType, location, 0, 1)
 			: nullptr;
 
@@ -140,3 +141,17 @@ DEFINE_HOOK(0x73FEC1, UnitClass_WhatAction_DeploysIntoDesyncFix, 0x6)
 }
 
 #pragma endregion
+
+DEFINE_HOOK(0x7396D2, UnitClass_TryToDeploy_Transfer, 0x5)
+{
+	GET(UnitClass*, pUnit, EBP);
+	GET(BuildingClass*, pStructure, EBX);
+
+	if (pUnit->Type->DeployToFire && pUnit->Target)
+		pStructure->LastTarget = pUnit->Target;
+
+	const auto pStructureExt = BuildingExt::ExtMap.Find(pStructure);
+	pStructureExt->DeployedTechno = true;
+
+	return 0;
+}

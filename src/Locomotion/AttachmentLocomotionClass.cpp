@@ -53,6 +53,9 @@ Matrix3D AttachmentLocomotionClass::Draw_Matrix(VoxelIndexKey* key)
 
 		mtx.RotateZ(adjustmentAngle);
 
+		size_t arfFace = 0;
+		size_t arsFace = 0;
+
 		if (const auto pJjLoco = locomotion_cast<JumpjetLocomotionClass*>(pParentLoco))
 		{
 			if (!TechnoTypeExt::ExtMap.Find(pParentFoot->GetTechnoType())->JumpjetTilt
@@ -61,39 +64,50 @@ Matrix3D AttachmentLocomotionClass::Draw_Matrix(VoxelIndexKey* key)
 			{
 				const auto pTypeExt = TechnoTypeExt::ExtMap.Find(pChild->GetTechnoType());
 
-				if (pTypeExt->JumpjetTilt)
+				if (pTypeExt->JumpjetTilt && pChild->WhatAmI() == AbstractType::Unit)
 				{
-					const auto forwardSpeedFactor = pJjLoco->CurrentSpeed * pTypeExt->JumpjetTilt_ForwardSpeedFactor;
-					const auto forwardAccelFactor = pJjLoco->Accel * pTypeExt->JumpjetTilt_ForwardAccelFactor;
+					const float forwardSpeedFactor = static_cast<float>(pJjLoco->CurrentSpeed * pTypeExt->JumpjetTilt_ForwardSpeedFactor);
+					const float forwardAccelFactor = static_cast<float>(pJjLoco->Accel * pTypeExt->JumpjetTilt_ForwardAccelFactor);
 
-					const float arf = std::min(JumpjetTiltReference::MaxTilt, static_cast<float>((forwardAccelFactor + forwardSpeedFactor)
-						* JumpjetTiltReference::ForwardBaseTilt));
+					const float arf = Math::clamp(static_cast<float>((forwardAccelFactor + forwardSpeedFactor)
+						* JumpjetTiltReference::ForwardBaseTilt), -JumpjetTiltReference::MaxTilt, JumpjetTiltReference::MaxTilt);
 
-					float ars = 0.0f;
 					const auto& locoFace = pJjLoco->LocomotionFacing;
 
 					if (locoFace.IsRotating())
 					{
-						const auto sidewaysSpeedFactor = pJjLoco->CurrentSpeed * pTypeExt->JumpjetTilt_SidewaysSpeedFactor;
-						const auto sidewaysRotationFactor = static_cast<short>(locoFace.Difference().Raw)
-							* pTypeExt->JumpjetTilt_SidewaysRotationFactor;
+						const float sidewaysSpeedFactor = static_cast<float>(pJjLoco->CurrentSpeed * pTypeExt->JumpjetTilt_SidewaysSpeedFactor);
+						const float sidewaysRotationFactor = static_cast<float>(static_cast<short>(locoFace.Difference().Raw)
+							* pTypeExt->JumpjetTilt_SidewaysRotationFactor);
 
-						ars += Math::clamp(static_cast<float>(sidewaysSpeedFactor * sidewaysRotationFactor
+						const float ars = Math::clamp(static_cast<float>(sidewaysSpeedFactor * sidewaysRotationFactor
 							* JumpjetTiltReference::SidewaysBaseTilt), -JumpjetTiltReference::MaxTilt, JumpjetTiltReference::MaxTilt);
+
+						const auto arsDir = DirStruct(ars);
+						arsFace = arsDir.GetFacing<128>(96);
+
+						if (arsFace)
+							mtx.RotateX(static_cast<float>(arsDir.GetRadian<128>()));
 					}
 
-					if (std::abs(ars) >= 0.005 || std::abs(arf) >= 0.005)
-					{
-						if (key) key->Invalidate();
-						mtx.RotateX(ars);
-						mtx.RotateY(arf);
-					}
+					const auto arfDir = DirStruct(arf);
+					arfFace = arfDir.GetFacing<128>(96);
+
+					if (arfFace)
+						mtx.RotateY(static_cast<float>(arfDir.GetRadian<128>()));
 				}
 			}
 		}
 
 		if (key && key->Is_Valid_Key())
-			key->MainVoxel.FrameIndex = childFace.GetFacing<32>();
+		{
+			if (*key == 0 && (arfFace || arsFace))
+				*key = (((arfFace & 0x7Fu) << 7) + (arsFace & 0x7Fu)) << 12;
+			else
+				*key = *key << 5;
+
+			*key = *key | childFace.GetFacing<32>();
+		}
 
 		return mtx;
 	}

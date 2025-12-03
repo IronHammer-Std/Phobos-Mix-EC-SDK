@@ -2,6 +2,7 @@
 
 #include <SpawnManagerClass.h>
 #include <TunnelLocomotionClass.h>
+#include <JumpjetLocomotionClass.h>
 
 #include <Ext/Anim/Body.h>
 
@@ -65,9 +66,11 @@ DEFINE_HOOK(0x6B7265, SpawnManagerClass_AI_UpdateTimer, 0x6)
 {
 	GET(SpawnManagerClass* const, pThis, ESI);
 
-	if (pThis->Owner && pThis->Status == SpawnManagerStatus::Launching && pThis->CountDockedSpawns() != 0)
+	auto const pOwner = pThis->Owner;
+
+	if (pOwner && pThis->Status == SpawnManagerStatus::Launching && pThis->CountDockedSpawns() != 0)
 	{
-		auto const pTypeExt = TechnoExt::ExtMap.Find(pThis->Owner)->TypeExtData;
+		auto const pTypeExt = TechnoExt::ExtMap.Find(pOwner)->TypeExtData;
 
 		if (pTypeExt->Spawner_DelayFrames.isset())
 			R->EAX(std::min(pTypeExt->Spawner_DelayFrames.Get(), 10));
@@ -77,14 +80,37 @@ DEFINE_HOOK(0x6B7265, SpawnManagerClass_AI_UpdateTimer, 0x6)
 	return 0;
 }
 
+// Fix Jumpjets can not spawn missiles in air.
+DEFINE_HOOK(0x6B72FE, SpawnerManagerClass_AI_MissileCheck, 0x9)
+{
+	enum { SpawnMissile = 0x6B735C, NoSpawn = 0x6B795A };
+
+	GET(SpawnManagerClass*, pThis, ESI);
+
+	const auto pFoot = abstract_cast<FootClass*, true>(TechnoExt::GetTopLevelParent(pThis->Owner));
+
+	if (!pFoot)
+		return SpawnMissile;
+
+	const auto pLoco = pFoot->Locomotor;
+
+	if (pLoco->Is_Moving_Now())
+		return NoSpawn;
+
+	if (locomotion_cast<JumpjetLocomotionClass*>(pLoco)) // Jumpjet should only check Is_Moving_Now.
+		return SpawnMissile;
+
+	return pLoco->Is_Moving() ? NoSpawn : SpawnMissile;
+}
+
 DEFINE_HOOK_AGAIN(0x6B73BE, SpawnManagerClass_AI_SpawnTimer, 0x6)
 DEFINE_HOOK(0x6B73AD, SpawnManagerClass_AI_SpawnTimer, 0x5)
 {
 	GET(SpawnManagerClass* const, pThis, ESI);
 
-	if (pThis->Owner)
+	if (auto const pOwner = pThis->Owner)
 	{
-		auto const pTypeExt = TechnoExt::ExtMap.Find(pThis->Owner)->TypeExtData;
+		auto const pTypeExt = TechnoExt::ExtMap.Find(pOwner)->TypeExtData;
 
 		if (pTypeExt->Spawner_DelayFrames.isset())
 			R->ECX(pTypeExt->Spawner_DelayFrames.Get());
@@ -101,7 +127,8 @@ DEFINE_HOOK(0x6B7600, SpawnManagerClass_AI_InitDestination, 0x6)
 	GET(SpawnManagerClass* const, pThis, ESI);
 	GET(AircraftClass* const, pSpawnee, EDI);
 
-	auto const pTypeExt = TechnoExt::ExtMap.Find(pThis->Owner)->TypeExtData;
+	auto const pOwner = pThis->Owner;
+	auto const pTypeExt = TechnoExt::ExtMap.Find(pOwner)->TypeExtData;
 
 	if (pTypeExt->Spawner_AttackImmediately)
 	{
@@ -111,7 +138,7 @@ DEFINE_HOOK(0x6B7600, SpawnManagerClass_AI_InitDestination, 0x6)
 	}
 	else
 	{
-		auto const mapCoords = pThis->Owner->GetMapCoords();
+		auto const mapCoords = pOwner->GetMapCoords();
 		auto const pCell = MapClass::Instance.GetCellAt(mapCoords);
 		pSpawnee->SetDestination(pCell->GetNeighbourCell(FacingType::North), true);
 		pSpawnee->QueueMission(Mission::Move, false);
@@ -124,7 +151,7 @@ DEFINE_HOOK(0x6B6D44, SpawnManagerClass_Init_Spawns, 0x5)
 {
 	enum { Jump = 0x6B6DF0, Change = 0x6B6D53, Continue = 0 };
 	GET(SpawnManagerClass*, pThis, ESI);
-	GET_STACK(size_t, i, STACK_OFFSET(0x1C, 0x4));
+	GET_STACK(const size_t, i, STACK_OFFSET(0x1C, 0x4));
 
 	auto const pTypeExt = TechnoTypeExt::ExtMap.Find(pThis->Owner->GetTechnoType());
 
@@ -141,7 +168,7 @@ DEFINE_HOOK(0x6B6D44, SpawnManagerClass_Init_Spawns, 0x5)
 	if (pTypeExt->Spawns_Queue.size() <= i || !pTypeExt->Spawns_Queue[i])
 		return Continue;
 
-	R->EAX(pTypeExt->Spawns_Queue[i]->CreateObject(pThis->Owner->GetOwningHouse()));
+	R->EAX(pTypeExt->Spawns_Queue[i]->CreateObject(pThis->Owner->Owner));
 	return Change;
 }
 
@@ -149,7 +176,8 @@ DEFINE_HOOK(0x6B78D3, SpawnManagerClass_Update_Spawns, 0x6)
 {
 	GET(SpawnManagerClass*, pThis, ESI);
 
-	auto const pTypeExt = TechnoExt::ExtMap.Find(pThis->Owner)->TypeExtData;
+	auto const pOwner = pThis->Owner;
+	auto const pTypeExt = TechnoExt::ExtMap.Find(pOwner)->TypeExtData;
 
 	if (pTypeExt->Spawns_Queue.empty())
 		return 0;
@@ -169,7 +197,7 @@ DEFINE_HOOK(0x6B78D3, SpawnManagerClass_Update_Spawns, 0x6)
 	if (vec.empty() || !vec[0])
 		return 0;
 
-	R->EAX(vec[0]->CreateObject(pThis->Owner->GetOwningHouse()));
+	R->EAX(vec[0]->CreateObject(pOwner->Owner));
 	return 0x6B78EA;
 }
 
@@ -183,8 +211,14 @@ DEFINE_HOOK(0x6B7282, SpawnManagerClass_AI_PromoteSpawns, 0x5)
 	{
 		for (auto const pNode : pThis->SpawnedNodes)
 		{
-			if (pNode->Unit && pNode->Unit->Veterancy.Veterancy < pThis->Owner->Veterancy.Veterancy)
-				pNode->Unit->Veterancy.Add(pThis->Owner->Veterancy.Veterancy - pNode->Unit->Veterancy.Veterancy);
+			if (auto const pUnit = pNode->Unit)
+			{
+				const float unitVeterancy = pUnit->Veterancy.Veterancy;
+				const float ownerVeterancy = pThis->Owner->Veterancy.Veterancy;
+
+				if (unitVeterancy < ownerVeterancy)
+					pUnit->Veterancy.Add(ownerVeterancy - unitVeterancy);
+			}
 		}
 	}
 
@@ -226,14 +260,7 @@ DEFINE_HOOK(0x6B77B4, SpawnManagerClass_Update_RecycleSpawned, 0x7)
 
 	if (shouldRecycleSpawned())
 	{
-		if (pCarrierTypeExt->Spawner_RecycleAnim)
-		{
-			auto const pRecycleAnim = GameCreate<AnimClass>(pCarrierTypeExt->Spawner_RecycleAnim, spawnerCrd);
-			auto const pAnimExt = AnimExt::ExtMap.Find(pRecycleAnim);
-			pAnimExt->SetInvoker(pSpawner);
-			AnimExt::SetAnimOwnerHouseKind(pRecycleAnim, pSpawner->Owner, pSpawner->Owner, false, true);
-		}
-
+		AnimExt::CreateRandomAnim(pCarrierTypeExt->Spawner_RecycleAnim, spawnerCrd, pSpawner, pSpawner->Owner, true);
 		pSpawner->Limbo(); // Remove from ATC first
 		pSpawner->SetLocation(pCarrier->GetCoords());
 		return Recycle; // Skip vanilla Limbo()
@@ -261,13 +288,16 @@ DEFINE_HOOK(0x4D962B, FootClass_SetDestination_RecycleFLH, 0x5)
 			*pDestCrd += TechnoExt::GetFLHAbsoluteCoords(pCarrier, FLH, pCarrierTypeExt->Spawner_RecycleOnTurret) - pCarrier->GetCoords();
 		}
 	}
-	else if (RulesExt::Global()->FollowTargetSelf)
+	else if ((pDestination->AbstractFlags & AbstractFlags::Techno) != AbstractFlags::None
+		&& (((pDestination->AbstractFlags & AbstractFlags::Foot) != AbstractFlags::None)
+			? RulesExt::Global()->FollowTargetSelf.Get() && locomotion_cast<JumpjetLocomotionClass*>(((static_cast<FootClass*>(pDestination)))->Locomotor)
+			: !pThis->GetTechnoType()->MissileSpawn && (pThis->SendCommand(RadioCommand::QueryCanEnter, static_cast<BuildingClass*>(pDestination)) != RadioCommand::AnswerPositive)))
 	{
-		if (const auto pFoot = abstract_cast<FootClass*>(pDestination))
-		{
-			GET(CoordStruct* const, pDestCrd, EAX);
-			*pDestCrd = pFoot->GetCell()->GetCoords();
-		}
+		GET(CoordStruct*, pDestCrd, EAX);
+		auto crd = pDestination->GetCoords();
+		crd.X = ((crd.X >> 8) << 8) + 128;
+		crd.Y = ((crd.Y >> 8) << 8) + 128;
+		*pDestCrd = crd;
 	}
 
 	return 0;
@@ -457,7 +487,7 @@ DEFINE_HOOK(0x728F89, TunnelLocomotionClass_Process_SubterraneanHeight1, 0x5)
 	enum { Skip = 0x728FA6, Continue = 0x728F90 };
 
 	GET(TechnoClass*, pLinkedTo, ECX);
-	GET(int, height, EAX);
+	GET(const int, height, EAX);
 
 	auto const pTypeExt = TechnoExt::ExtMap.Find(pLinkedTo)->TypeExtData;
 
@@ -472,7 +502,7 @@ DEFINE_HOOK(0x728FC6, TunnelLocomotionClass_Process_SubterraneanHeight2, 0x5)
 	enum { Skip = 0x728FCD, Continue = 0x729021 };
 
 	GET(TechnoClass*, pLinkedTo, ECX);
-	GET(int, height, EAX);
+	GET(const int, height, EAX);
 
 	auto const pTypeExt = TechnoExt::ExtMap.Find(pLinkedTo)->TypeExtData;
 
@@ -523,13 +553,11 @@ DEFINE_HOOK(0x7292BF, TunnelLocomotionClass_ProcessPreDigIn_DigStartROT, 0x6)
 	GET(TunnelLocomotionClass* const, pThis, ESI);
 	GET(int, time, EAX);
 
-	if (auto const pTypeExt = TechnoTypeExt::ExtMap.Find(pThis->LinkedTo->GetTechnoType()))
-	{
-		const int rot = pTypeExt->DigStartROT;
+	auto const pTypeExt = TechnoExt::ExtMap.Find(pThis->LinkedTo)->TypeExtData;
+	const int rot = pTypeExt->DigStartROT;
 
-		if (rot > 0)
-			time = (int)(64 / (double)rot);
-	}
+	if (rot > 0)
+		time = (int)(64 / (double)rot);
 
 	R->EAX(time);
 	return 0;
@@ -540,13 +568,11 @@ DEFINE_HOOK(0x729A65, TunnelLocomotionClass_ProcessPreDigOut_DigEndROT, 0x6)
 	GET(TunnelLocomotionClass* const, pThis, ESI);
 	GET(int, time, EAX);
 
-	if (auto const pTypeExt = TechnoTypeExt::ExtMap.Find(pThis->LinkedTo->GetTechnoType()))
-	{
-		const int rot = pTypeExt->DigEndROT;
+	auto const pTypeExt = TechnoExt::ExtMap.Find(pThis->LinkedTo)->TypeExtData;
+	const int rot = pTypeExt->DigEndROT;
 
-		if (rot > 0)
-			time = (int)(64 / (double)rot);
-	}
+	if (rot > 0)
+		time = (int)(64 / (double)rot);
 
 	R->EAX(time);
 	return 0;
@@ -558,14 +584,11 @@ DEFINE_HOOK(0x729969, TunnelLocomotionClass_ProcessPreDigOut_DigOutSpeed, 0x6)
 	GET(int, speed, EAX);
 
 	auto const pTechno = pThis->LinkedTo;
+	auto const pTypeExt = TechnoExt::ExtMap.Find(pTechno)->TypeExtData;
+	const int digOutSpeed = pTypeExt->DigOutSpeed;
 
-	if (auto const pTypeExt = TechnoTypeExt::ExtMap.Find(pTechno->GetTechnoType()))
-	{
-		const int digOutSpeed = pTypeExt->DigOutSpeed;
-
-		if (digOutSpeed > 0)
-			speed = (int)(digOutSpeed * TechnoExt::GetCurrentSpeedMultiplier(pTechno));
-	}
+	if (digOutSpeed > 0)
+		speed = (int)(digOutSpeed * TechnoExt::GetCurrentSpeedMultiplier(pTechno));
 
 	R->EAX(speed);
 	return 0;
@@ -625,7 +648,7 @@ DEFINE_HOOK(0x70DE40, TechnoClass_GattlingValueRateDown_GattlingRateDownDelay, 0
 		return Return;
 
 	++pExt->AccumulatedGattlingValue;
-	auto remain = pExt->AccumulatedGattlingValue;
+	int remain = pExt->AccumulatedGattlingValue;
 
 	if (!pExt->ShouldUpdateGattlingValue)
 		remain -= pTypeExt->RateDown_Delay;
@@ -675,10 +698,10 @@ DEFINE_HOOK(0x70E01E, TechnoClass_GattlingRateDown_GattlingRateDownDelay, 0x6)
 	if (pTypeExt->RateDown_Delay < 0)
 		return SkipGameCode;
 
-	GET_STACK(int, rateMult, STACK_OFFSET(0x10, 0x4));
+	GET_STACK(const int, rateMult, STACK_OFFSET(0x10, 0x4));
 
 	pExt->AccumulatedGattlingValue += rateMult;
-	auto remain = pExt->AccumulatedGattlingValue;
+	int remain = pExt->AccumulatedGattlingValue;
 
 	if (!pExt->ShouldUpdateGattlingValue)
 		remain -= pTypeExt->RateDown_Delay;
@@ -779,7 +802,7 @@ DEFINE_HOOK(0x51B20E, InfantryClass_AssignTarget_FireOnce, 0x6)
 }
 
 // Update attached anim layers after parent unit changes layer.
-void __fastcall DisplayClass_Submit_Wrapper(DisplayClass* pThis, discard_t _, ObjectClass* pObject)
+void __fastcall DisplayClass_Submit_Wrapper(DisplayClass* pThis, void* _, ObjectClass* pObject)
 {
 	pThis->Submit(pObject);
 
@@ -860,32 +883,19 @@ DEFINE_HOOK(0x730D1F, DeployCommandClass_Execute_VoiceDeploy, 0x5)
 
 #pragma endregion
 
-// issue #112 Make FireOnce=yes work on other TechnoTypes
-// Author: Starkku
-DEFINE_HOOK(0x4C7512, EventClass_Execute_StopCommand, 0x6)
+// Prevent subterranean units from deploying while underground.
+DEFINE_HOOK(0x73D6E6, UnitClass_Unload_Subterranean, 0x6)
 {
-	GET(TechnoClass* const, pThis, ESI);
+	enum { ReturnFromFunction = 0x73DFB0 };
 
-	auto const pUnit = abstract_cast<UnitClass*>(pThis);
+	GET(UnitClass*, pThis, ESI);
 
-	if (pUnit)
+	if (pThis->Type->Locomotor == LocomotionClass::CLSIDs::Tunnel)
 	{
-		// Reset target for deploy weapons.
-		if (pUnit->CurrentMission == Mission::Unload && pUnit->Type->DeployFire && !pUnit->Type->IsSimpleDeployer)
-		{
-			pUnit->SetTarget(nullptr);
-			pThis->QueueMission(Mission::Guard, true);
-		}
+		auto const pLoco = static_cast<TunnelLocomotionClass*>(pThis->Locomotor.GetInterfacePtr());
 
-		auto const pType = pUnit->Type;
-
-		// Reset subterranean harvester rally point info.
-		if ((pType->Harvester || pType->Weeder) && pType->MovementZone == MovementZone::Subterrannean)
-		{
-			auto const pExt = TechnoExt::ExtMap.Find(pUnit);
-			pExt->SubterraneanHarvFreshFromFactory = false;
-			pExt->SubterraneanHarvRallyDest = nullptr;
-		}
+		if (pLoco->State != TunnelLocomotionClass::State::Idle)
+			return ReturnFromFunction;
 	}
 
 	return 0;

@@ -73,12 +73,16 @@ public:
 
 		Nullable<bool> Cameo_ShouldCount;
 		Nullable<bool> AutoBuilding;
-		Valueable<int> AutoBuilding_Gap;
+		Nullable<int> AutoBuilding_Gap;
 		Valueable<bool> LimboBuild;
 		Valueable<int> LimboBuildID;
 		Valueable<BuildingTypeClass*> LaserFencePost_Fence;
-		Valueable<BuildingTypeClass*> PlaceBuilding_OnLand;
-		Valueable<BuildingTypeClass*> PlaceBuilding_OnWater;
+		ValueableVector<BuildingTypeClass*> PlaceBuilding_OnLand;
+		ValueableVector<BuildingTypeClass*> PlaceBuilding_OnWater;
+		Valueable<SHPStruct*> PlaceBuilding_DirectionShape;
+		CustomPalette PlaceBuilding_DirectionPalette;
+		Valueable<bool> PlaceBuilding_Extra;
+		Valueable<bool> CanBuildUnderUnits;
 
 		Valueable<bool> IsAnimDelayedBurst;
 
@@ -122,6 +126,21 @@ public:
 		Valueable<bool> Refinery_UseNormalActiveAnim;
 
 		Nullable<bool> AIBaseNormal;
+
+		ValueableVector<bool> HasPowerUpAnim;
+
+		Nullable<bool> AISellCapturedBuilding;
+
+		Valueable<int> Bib_Dir;
+		Valueable<int> NumberImpassableRows_Dir;
+		Valueable<int> WeaponsFactory_Dir;
+
+		// Ares 0.7
+		Valueable<bool> IsPassable;
+
+		// Ares 0.A
+		Valueable<BuildingTypeClass*> RubbleIntact;
+		Valueable<bool> RubbleIntactRemove;
 
 		ExtData(BuildingTypeClass* OwnerObject) : Extension<BuildingTypeClass>(OwnerObject)
 			, PowersUp_Owner { AffectedHouse::Owner }
@@ -167,12 +186,16 @@ public:
 			, RallyMovementZone { }
 			, Cameo_ShouldCount {}
 			, AutoBuilding {}
-			, AutoBuilding_Gap { 1 }
+			, AutoBuilding_Gap {}
 			, LimboBuild { false }
 			, LimboBuildID { -1 }
 			, LaserFencePost_Fence {}
 			, PlaceBuilding_OnLand {}
 			, PlaceBuilding_OnWater {}
+			, PlaceBuilding_DirectionShape { nullptr }
+			, PlaceBuilding_DirectionPalette {}
+			, PlaceBuilding_Extra { false }
+			, CanBuildUnderUnits { false }
 			, AircraftDockingDirs {}
 			, FactoryPlant_AllowTypes {}
 			, FactoryPlant_DisallowTypes {}
@@ -203,7 +226,21 @@ public:
 			, BuildingRepairedSound {}
 			, Refinery_UseNormalActiveAnim { false }
 			, AIBaseNormal {}
+			, HasPowerUpAnim {}
+			, AISellCapturedBuilding {}
+			, Bib_Dir { 2 }
+			, NumberImpassableRows_Dir { 2 }
+			, WeaponsFactory_Dir { 2 }
+
+			// Ares 0.7
+			, IsPassable { false }
+
+			// Ares 0.A
+			, RubbleIntact { nullptr }
+			, RubbleIntactRemove { false }
 		{ }
+
+		BuildingTypeClass* GetAnotherPlacingType(size_t direction, bool onWater);
 
 		// Ares 0.A functions
 		int GetSuperWeaponCount() const;
@@ -240,7 +277,7 @@ public:
 	static bool SaveGlobals(PhobosStreamWriter& Stm);
 
 	static void PlayBunkerSound(BuildingClass const* pThis, bool buildUp = false);
-
+	static CellStruct GetWeaponFactoryDoor(BuildingClass* pThis);
 	static int GetEnhancedPower(BuildingClass* pBuilding, HouseClass* pHouse);
 	static bool CanUpgrade(BuildingClass* pBuilding, BuildingTypeClass* pUpgradeType, HouseClass* pUpgradeOwner);
 	static int GetUpgradesAmount(BuildingTypeClass* pBuilding, HouseClass* pHouse);

@@ -10,7 +10,7 @@ DEFINE_HOOK(0x7098B9, TechnoClass_TargetSomethingNearby_AutoFire, 0x6)
 {
 	GET(TechnoClass* const, pThis, ESI);
 
-	auto pExt = TechnoExt::ExtMap.Find(pThis)->TypeExtData;
+	const auto pExt = TechnoExt::ExtMap.Find(pThis)->TypeExtData;
 
 	if (pExt->AutoFire)
 	{
@@ -25,10 +25,10 @@ DEFINE_HOOK(0x7098B9, TechnoClass_TargetSomethingNearby_AutoFire, 0x6)
 	return 0;
 }
 
-FireError __fastcall TechnoClass_TargetSomethingNearby_CanFire_Wrapper(TechnoClass* pThis, discard_t _, AbstractClass* pTarget, int weaponIndex, bool ignoreRange)
+FireError __fastcall TechnoClass_TargetSomethingNearby_CanFire_Wrapper(TechnoClass* pThis, void* _, AbstractClass* pTarget, int weaponIndex, bool ignoreRange)
 {
 	auto const pExt = TechnoExt::ExtMap.Find(pThis);
-	bool disableWeapons = pExt->AE.DisableWeapons;
+	const bool disableWeapons = pExt->AE.DisableWeapons;
 	pExt->AE.DisableWeapons = false;
 	auto const fireError = pThis->GetFireError(pTarget, weaponIndex, ignoreRange);
 	pExt->AE.DisableWeapons = disableWeapons;
@@ -62,7 +62,7 @@ DEFINE_HOOK(0x6F7E47, TechnoClass_EvaluateObject_MapZone, 0x7)
 
 	GET(TechnoClass*, pThis, EDI);
 	GET(ObjectClass*, pObject, ESI);
-	GET(int, zone, EBP);
+	GET(const int, zone, EBP);
 
 	if (auto const pTechno = abstract_cast<TechnoClass*>(pObject))
 	{
@@ -89,8 +89,7 @@ DEFINE_HOOK(0x70095A, TechnoClass_WhatAction_WallWeapon, 0x6)
 	GET(TechnoClass*, pThis, ESI);
 	GET_STACK(OverlayTypeClass*, pOverlayTypeClass, STACK_OFFSET(0x2C, -0x18));
 
-	int weaponIndex = TechnoExt::GetWeaponIndexAgainstWall(pThis, pOverlayTypeClass);
-	R->EAX(pThis->GetWeapon(weaponIndex));
+	R->EAX(pThis->GetWeapon(TechnoExt::GetWeaponIndexAgainstWall(pThis, pOverlayTypeClass)));
 
 	return 0;
 }
@@ -126,7 +125,7 @@ namespace CellEvalTemp
 
 DEFINE_HOOK(0x6F8C9D, TechnoClass_EvaluateCell_SetContext, 0x7)
 {
-	GET(int, weaponIndex, EAX);
+	GET(const int, weaponIndex, EAX);
 
 	CellEvalTemp::weaponIndex = weaponIndex;
 
@@ -138,7 +137,7 @@ WeaponStruct* __fastcall TechnoClass_EvaluateCellGetWeaponWrapper(TechnoClass* p
 	return pThis->GetWeapon(CellEvalTemp::weaponIndex);
 }
 
-int __fastcall TechnoClass_EvaluateCellGetWeaponRangeWrapper(TechnoClass* pThis, discard_t _, int weaponIndex)
+int __fastcall TechnoClass_EvaluateCellGetWeaponRangeWrapper(TechnoClass* pThis, void* _, int weaponIndex)
 {
 	return pThis->GetWeaponRange(CellEvalTemp::weaponIndex);
 }
@@ -335,18 +334,17 @@ double __fastcall HealthRatio_Wrapper(TechnoClass* pTechno)
 
 	if (result >= 1.0)
 	{
-		if (const auto pExt = TechnoExt::ExtMap.Find(pTechno))
-		{
-			if (const auto pShieldData = pExt->Shield.get())
-			{
-				if (pShieldData->IsActive())
-				{
-					const auto pWH = EvaluateObjectTemp::PickedWeapon ? EvaluateObjectTemp::PickedWeapon->Warhead : nullptr;
-					const auto pFoot = abstract_cast<FootClass*>(pTechno);
+		const auto pExt = TechnoExt::ExtMap.Find(pTechno);
 
-					if (!pShieldData->CanBePenetrated(pWH) || ((pFoot && pFoot->ParasiteEatingMe)))
-						result = pShieldData->GetHealthRatio();
-				}
+		if (const auto pShieldData = pExt->Shield.get())
+		{
+			if (pShieldData->IsActive())
+			{
+				const auto pWH = EvaluateObjectTemp::PickedWeapon ? EvaluateObjectTemp::PickedWeapon->Warhead : nullptr;
+				const auto pFoot = abstract_cast<FootClass*>(pTechno);
+
+				if (!pShieldData->CanBePenetrated(pWH) || ((pFoot && pFoot->ParasiteEatingMe)))
+					result = pShieldData->GetHealthRatio();
 			}
 		}
 	}
@@ -417,13 +415,16 @@ private:
 		if (!pInf || !pBuilding)
 			return false;
 
-		bool allied = HouseClass::CurrentPlayer->IsAlliedWith(pBuilding);
+		const bool allied = HouseClass::CurrentPlayer->IsAlliedWith(pBuilding);
+		const auto pType = pBuilding->Type;
 
-		if (allied && pBuilding->Type->Repairable)
+		if (allied && pType->Repairable)
 			return true;
 
-		if (!allied && pBuilding->Type->Capturable
-			&& (!pBuilding->Owner->Type->MultiplayPassive || !pBuilding->Type->CanBeOccupied || pBuilding->IsBeingWarpedOut()))
+		if (!allied && pType->Capturable
+			&& (!pBuilding->Owner->Type->MultiplayPassive
+				|| !pType->CanBeOccupied
+				|| pBuilding->IsBeingWarpedOut()))
 		{
 			return true;
 		}
@@ -433,7 +434,7 @@ private:
 };
 
 
-FireError __fastcall UnitClass__GetFireError_Wrapper(UnitClass* pThis, discard_t _, ObjectClass* pObj, int nWeaponIndex, bool ignoreRange)
+FireError __fastcall UnitClass__GetFireError_Wrapper(UnitClass* pThis, void* _, ObjectClass* pObj, int nWeaponIndex, bool ignoreRange)
 {
 	AresScheme::Prefix(pThis, pObj, nWeaponIndex, false);
 	auto const result = pThis->UnitClass::GetFireError(pObj, nWeaponIndex, ignoreRange);
@@ -442,7 +443,7 @@ FireError __fastcall UnitClass__GetFireError_Wrapper(UnitClass* pThis, discard_t
 }
 DEFINE_FUNCTION_JUMP(VTABLE, 0x7F6030, UnitClass__GetFireError_Wrapper)
 
-FireError __fastcall InfantryClass__GetFireError_Wrapper(InfantryClass* pThis, discard_t _, ObjectClass* pObj, int nWeaponIndex, bool ignoreRange)
+FireError __fastcall InfantryClass__GetFireError_Wrapper(InfantryClass* pThis, void* _, ObjectClass* pObj, int nWeaponIndex, bool ignoreRange)
 {
 	AresScheme::Prefix(pThis, pObj, nWeaponIndex, false);
 	auto const result = pThis->InfantryClass::GetFireError(pObj, nWeaponIndex, ignoreRange);
@@ -451,13 +452,13 @@ FireError __fastcall InfantryClass__GetFireError_Wrapper(InfantryClass* pThis, d
 }
 DEFINE_FUNCTION_JUMP(VTABLE, 0x7EB418, InfantryClass__GetFireError_Wrapper)
 
-Action __fastcall UnitClass__WhatAction_Wrapper(UnitClass* pThis, discard_t _, ObjectClass* pObj, bool ignoreForce)
+Action __fastcall UnitClass__WhatAction_Wrapper(UnitClass* pThis, void* _, ObjectClass* pObj, bool ignoreForce)
 {
 	AresScheme::Prefix(pThis, pObj, -1, false);
 	auto result = pThis->UnitClass::MouseOverObject(pObj, ignoreForce);
 	AresScheme::Suffix();
 
-	auto const& pExt = TechnoExt::ExtMap.Find(pThis);
+	auto const pExt = TechnoExt::ExtMap.Find(pThis);
 	if (!pExt->ParentAttachment)
 		return result;
 
@@ -489,7 +490,7 @@ Action __fastcall UnitClass__WhatAction_Wrapper(UnitClass* pThis, discard_t _, O
 }
 DEFINE_FUNCTION_JUMP(VTABLE, 0x7F5CE4, UnitClass__WhatAction_Wrapper)
 
-Action __fastcall InfantryClass__WhatAction_Wrapper(InfantryClass* pThis, discard_t _, ObjectClass* pObj, bool ignoreForce)
+Action __fastcall InfantryClass__WhatAction_Wrapper(InfantryClass* pThis, void* _, ObjectClass* pObj, bool ignoreForce)
 {
 	AresScheme::Prefix(pThis, pObj, -1, pThis->Type->Engineer);
 	auto const result = pThis->InfantryClass::MouseOverObject(pObj, ignoreForce);

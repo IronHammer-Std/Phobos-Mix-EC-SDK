@@ -125,17 +125,23 @@ public:
 		Valueable<SHPStruct*> ProgressDisplay_Others_PipsShape;
 		Valueable<SHPStruct*> ProgressDisplay_Buildings_PipsShape;
 		Valueable<bool> ExtendedAircraftMissions;
+		Valueable<int> ExtendedAircraftMissions_UnlandDamage;
 		Valueable<bool> AmphibiousEnter;
 		Valueable<bool> AmphibiousUnload;
 		Valueable<bool> NoQueueUpToEnter;
 		Valueable<bool> NoQueueUpToUnload;
+		Nullable<bool> NoQueueUpToEnter_Buildings;
+		Nullable<bool> NoQueueUpToUnload_Buildings;
+
 		Valueable<bool> CheckExtraBaseNormal;
 		Valueable<bool> Cameo_AlwaysExist;
 		Valueable<SHPStruct*> Cameo_OverlayShapes;
 		ValueableVector<int> Cameo_OverlayFrames;
 		CustomPalette Cameo_OverlayPalette;
 		Valueable<bool> ExtendedBuildingPlacing;
+		Valueable<bool> ExtendedWeaponsFactory;
 		Valueable<bool> AutoBuilding;
+		Valueable<int> AutoBuilding_Gap;
 
 		Valueable<bool> BuildingProductionQueue;
 		Valueable<bool> PlacementGrid_Expand;
@@ -145,10 +151,7 @@ public:
 		PhobosPCXFile SelectedVehicleMissingPCX;
 		PhobosPCXFile SelectedAircraftMissingPCX;
 		PhobosPCXFile SelectedBuildingMissingPCX;
-		Valueable<bool> AIAutoDeployMCV;
-		Valueable<bool> AISetBaseCenter;
-		Valueable<bool> AIBiasSpawnCell;
-		Valueable<bool> AIForbidConYard;
+		Valueable<bool> SelectedIngameTimer;
 		Valueable<int> CleanUpAirBarrier;
 		Valueable<bool> ExtendedScatterAction;
 		Valueable<bool> MergeBuildingDamage;
@@ -179,6 +182,7 @@ public:
 		Valueable<double> ForceShield_ExtraTintIntensity;
 		Valueable<bool> ColorAddUse8BitRGB;
 		Valueable<ColorStruct> AirstrikeLineColor;
+		Valueable<int> AirstrikeLineZAdjust;
 
 		Valueable<PartialVector2D<int>> ROF_RandomDelay;
 		Valueable<ColorStruct> ToolTip_Background_Color;
@@ -216,15 +220,11 @@ public:
 		Nullable<BuildingSelectBracketPosition> DrawInsignia_AdjustPos_BuildingsAnchor;
 		Valueable<Point2D> DrawInsignia_AdjustPos_Units;
 		Valueable<bool> DrawInsignia_UsePixelSelectionBracketDelta;
-		Valueable<AnimTypeClass*> Promote_VeteranAnimation;
-		Valueable<AnimTypeClass*> Promote_EliteAnimation;
+		ValueableVector<AnimTypeClass*> Promote_VeteranAnimation;
+		ValueableVector<AnimTypeClass*> Promote_EliteAnimation;
 
 		Valueable<bool> CylinderRangefinding;
 		Valueable<bool> StopPlanningOnEnter;
-		Nullable<int> AINormalTargetingDelay;
-		Nullable<int> PlayerNormalTargetingDelay;
-		Nullable<int> AIGuardAreaTargetingDelay;
-		Nullable<int> PlayerGuardAreaTargetingDelay;
 		Valueable<bool> PlayerAttackIronCurtain;
 		Valueable<bool> AIAttackIronCurtain;
 		Valueable<bool> PlayerAutoRepair;
@@ -245,8 +245,7 @@ public:
 		Valueable<bool> NonVehExplodeOnDestroy;
 		Valueable<bool> FireDeathWeaponOnCrushed;
 		Valueable<bool> CrushBuildingOnAnyCell;
-		Valueable<bool> RallyPointOnTechno;
-		Valueable<bool> RallyPointForceMove;
+		Valueable<bool> RallyPointIgnoreReachability;
 		Valueable<bool> RallyPointAreaGuard;
 		Valueable<bool> PlayerDestroyWalls;
 		Valueable<int> AutoTargetWalls;
@@ -254,15 +253,19 @@ public:
 		Valueable<bool> DestroyOwnerlessWalls;
 		Valueable<bool> AIAngerOnAlly;
 		Valueable<bool> FollowTargetSelf;
-		Valueable<bool> DistributeTargetingFrame;
-		Valueable<bool> DistributeTargetingFrame_AIOnly;
 
 		Valueable<bool> JumpjetClimbPredictHeight;
 		Valueable<bool> JumpjetClimbWithoutCutOut;
+		Valueable<bool> JumpjetClimbIgnoreBuilding;
 
 		Valueable<double> DamageOwnerMultiplier;
 		Valueable<double> DamageAlliesMultiplier;
 		Valueable<double> DamageEnemiesMultiplier;
+		Nullable<double> DamageOwnerMultiplier_NotAffectsEnemies;
+		Nullable<double> DamageAlliesMultiplier_NotAffectsEnemies;
+		Nullable<double> DamageOwnerMultiplier_Berzerk;
+		Nullable<double> DamageAlliesMultiplier_Berzerk;
+		Nullable<double> DamageEnemiesMultiplier_Berzerk;
 
 		Valueable<bool> DirectionalArmor;
 		Valueable<float> DirectionalArmor_FrontMultiplier;
@@ -293,6 +296,13 @@ public:
 		// Nullable<Vector3D<float>> VoxelShadowLightSource;
 		Valueable<bool> UseFixedVoxelLighting;
 
+		Valueable<bool> AIAutoDeployMCV;
+		Valueable<bool> AISetBaseCenter;
+		Valueable<bool> AIBiasSpawnCell;
+		Valueable<bool> AIForbidConYard;
+		Valueable<bool> AINodeWallsOnly;
+		Valueable<bool> AICleanWallNode;
+
 		Valueable<bool> AttackMove_Aggressive;
 		Valueable<bool> AttackMove_UpdateTarget;
 
@@ -318,6 +328,17 @@ public:
 		Valueable<bool> WarheadParticleAlphaImageIsLightFlash;
 		Valueable<int> CombatLightDetailLevel;
 		Valueable<int> LightFlashAlphaImageDetailLevel;
+
+		Valueable<bool> UseRetintFix;
+
+		Nullable<int> AINormalTargetingDelay;
+		Nullable<int> PlayerNormalTargetingDelay;
+		Nullable<int> AIGuardAreaTargetingDelay;
+		Nullable<int> PlayerGuardAreaTargetingDelay;
+		Nullable<int> AIAttackMoveTargetingDelay;
+		Nullable<int> PlayerAttackMoveTargetingDelay;
+		Valueable<bool> DistributeTargetingFrame;
+		Valueable<bool> DistributeTargetingFrame_AIOnly;
 
 		Valueable<bool> BuildingWaypoints;
 		Valueable<bool> BuildingTypeSelectable;
@@ -373,10 +394,13 @@ public:
 
 		Valueable<AffectedHouse> BerzerkTargeting;
 
+		// cache tint color
+		int TintColorIronCurtain;
+		int TintColorForceShield;
+		int TintColorBerserk;
+
 		Valueable<bool> AttackMove_IgnoreWeaponCheck;
 		Nullable<bool> AttackMove_StopWhenTargetAcquired;
-
-		Valueable<bool> DamageWallRecursivly;
 
 		Valueable<bool> DecloakDamagedTargets;
 		Valueable<bool> Decloak_OnBlockingMovement;
@@ -385,13 +409,32 @@ public:
 
 		Valueable<bool> InvisoBlockageFix;
 
+		Valueable<int> SmudgeUpdateTime;
+
 		Valueable<int> AIAdjacentMax;
 		Nullable<int> AIAdjacentMax_Campaign;
 
-		// cache tint color
-		int TintColorIronCurtain;
-		int TintColorForceShield;
-		int TintColorBerserk;
+		NullableIdx<AnimTypeClass> Parasite_GrappleAnim;
+
+		Valueable<bool> InfantryAutoDeploy;
+
+		Valueable<int> AdjacentWallDamage;
+
+		Valueable<bool> AISellCapturedBuilding;
+
+		Valueable<Leptons> InSequenceExtraRange;
+
+		Valueable<bool> EnhancedBerzerk;
+
+		Valueable<bool> AIAirTargetingFix;
+
+		Valueable<bool> IgnoreCenterMinorRadarEvent;
+
+		Valueable<bool> KeepAnimOnLimbo;
+
+		Valueable<bool> ExtendedStray;
+
+		Valueable<int> WarheadAnimZAdjust;
 
 		ExtData(RulesClass* OwnerObject) : Extension<RulesClass>(OwnerObject)
 			, Storage_TiberiumIndex { -1 }
@@ -483,30 +526,33 @@ public:
 			, ProgressDisplay_Others_PipsShape { FileSystem::PIPS_SHP }
 			, ProgressDisplay_Buildings_PipsShape { FileSystem::PIPS_SHP }
 			, ExtendedAircraftMissions { false }
+			, ExtendedAircraftMissions_UnlandDamage { -1 }
 			, AmphibiousEnter { false }
 			, AmphibiousUnload { false }
 			, NoQueueUpToEnter { false }
 			, NoQueueUpToUnload { false }
+			, NoQueueUpToEnter_Buildings {}
+			, NoQueueUpToUnload_Buildings {}
+
 			, CheckExtraBaseNormal { false }
 			, Cameo_AlwaysExist { false }
 			, Cameo_OverlayShapes { FileSystem::PIPS_SHP }
 			, Cameo_OverlayFrames {}
 			, Cameo_OverlayPalette {}
 			, ExtendedBuildingPlacing { false }
+			, ExtendedWeaponsFactory { false }
 			, AutoBuilding { false }
+			, AutoBuilding_Gap { 1 }
 
 			, BuildingProductionQueue { false }
 			, PlacementGrid_Expand { false }
 			, PlacementGrid_LandFrames { { 1, 0, 0 } }
 			, PlacementGrid_WaterFrames { { 1, 0, 0 } }
-			, AIAutoDeployMCV { true }
-			, AISetBaseCenter { true }
-			, AIBiasSpawnCell { false }
-			, AIForbidConYard { false }
 			, SelectedInfantryMissingPCX {}
 			, SelectedVehicleMissingPCX {}
 			, SelectedAircraftMissingPCX {}
 			, SelectedBuildingMissingPCX {}
+			, SelectedIngameTimer { false }
 			, CleanUpAirBarrier { 0 }
 			, ExtendedScatterAction { false }
 			, MergeBuildingDamage { false }
@@ -531,6 +577,7 @@ public:
 			, AllowWeaponSelectAgainstWalls { false }
 			, ColorAddUse8BitRGB { false }
 			, AirstrikeLineColor { { 255, 0, 0 } }
+			, AirstrikeLineZAdjust { 0 }
 			, ROF_RandomDelay { { 0 ,2 } }
 			, ToolTip_Background_Color { { 0, 0, 0 } }
 			, ToolTip_Background_Opacity { 100 }
@@ -569,10 +616,6 @@ public:
 			, PodImage { }
 			, CylinderRangefinding { false }
 			, StopPlanningOnEnter { true }
-			, AINormalTargetingDelay {}
-			, PlayerNormalTargetingDelay {}
-			, AIGuardAreaTargetingDelay {}
-			, PlayerGuardAreaTargetingDelay {}
 			, PlayerAttackIronCurtain { true }
 			, AIAttackIronCurtain { false }
 			, PlayerAutoRepair { false }
@@ -593,8 +636,7 @@ public:
 			, NonVehExplodeOnDestroy { false }
 			, FireDeathWeaponOnCrushed { false }
 			, CrushBuildingOnAnyCell { false }
-			, RallyPointOnTechno { false }
-			, RallyPointForceMove { false }
+			, RallyPointIgnoreReachability { false }
 			, RallyPointAreaGuard { false }
 			, PlayerDestroyWalls { false }
 			, AutoTargetWalls { 1 }
@@ -602,14 +644,19 @@ public:
 			, DestroyOwnerlessWalls { false }
 			, AIAngerOnAlly { true }
 			, FollowTargetSelf { false }
-			, DistributeTargetingFrame { false }
-			, DistributeTargetingFrame_AIOnly { true }
 
 			, JumpjetClimbPredictHeight { false }
 			, JumpjetClimbWithoutCutOut { false }
+			, JumpjetClimbIgnoreBuilding { false }
+
 			, DamageOwnerMultiplier { 1.0 }
 			, DamageAlliesMultiplier { 1.0 }
 			, DamageEnemiesMultiplier { 1.0 }
+			, DamageOwnerMultiplier_NotAffectsEnemies {}
+			, DamageAlliesMultiplier_NotAffectsEnemies {}
+			, DamageOwnerMultiplier_Berzerk {}
+			, DamageAlliesMultiplier_Berzerk {}
+			, DamageEnemiesMultiplier_Berzerk {}
 
 			, DirectionalArmor { false }
 			, DirectionalArmor_FrontMultiplier { 1.0 }
@@ -637,6 +684,12 @@ public:
 			, EndDistributionModeSound { -1 }
 			, AddDistributionModeCommandSound { -1 }
 			, UseFixedVoxelLighting { false }
+			, AIAutoDeployMCV { true }
+			, AISetBaseCenter { true }
+			, AIBiasSpawnCell { false }
+			, AIForbidConYard { false }
+			, AINodeWallsOnly { false }
+			, AICleanWallNode { false }
 			, AttackMove_Aggressive { false }
 			, AttackMove_UpdateTarget { false }
 			, MindControl_ThreatDelay { 0 }
@@ -656,6 +709,15 @@ public:
 			, WarheadParticleAlphaImageIsLightFlash { false }
 			, CombatLightDetailLevel { 0 }
 			, LightFlashAlphaImageDetailLevel { 0 }
+			, UseRetintFix { true }
+			, AINormalTargetingDelay {}
+			, PlayerNormalTargetingDelay {}
+			, AIGuardAreaTargetingDelay {}
+			, PlayerGuardAreaTargetingDelay {}
+			, AIAttackMoveTargetingDelay {}
+			, PlayerAttackMoveTargetingDelay {}
+			, DistributeTargetingFrame { false }
+			, DistributeTargetingFrame_AIOnly { true }
 			, BuildingWaypoints { false }
 			, BuildingTypeSelectable { false }
 
@@ -705,8 +767,6 @@ public:
 
 			, BerzerkTargeting { AffectedHouse::All }
 
-			, DamageWallRecursivly { true }
-
 			, TintColorIronCurtain { 0 }
 			, TintColorForceShield { 0 }
 			, TintColorBerserk { 0 }
@@ -721,8 +781,30 @@ public:
 
 			, InvisoBlockageFix { false }
 
+			, SmudgeUpdateTime { 0 }
+
 			, AIAdjacentMax { -1 }
 			, AIAdjacentMax_Campaign {}
+
+			, Parasite_GrappleAnim {}
+			, InfantryAutoDeploy { false }
+			, AdjacentWallDamage { 200 }
+
+			, AISellCapturedBuilding { true }
+
+			, InSequenceExtraRange { Leptons(0) }
+
+			, EnhancedBerzerk { false }
+
+			, AIAirTargetingFix { false }
+
+			, IgnoreCenterMinorRadarEvent { false }
+
+			, KeepAnimOnLimbo { false }
+
+			, ExtendedStray { false }
+
+			, WarheadAnimZAdjust { -15 }
 		{ }
 
 		virtual ~ExtData() = default;

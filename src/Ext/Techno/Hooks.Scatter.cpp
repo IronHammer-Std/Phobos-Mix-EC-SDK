@@ -122,13 +122,9 @@ DEFINE_HOOK(0x4495DF, BuildingClass_CheckWeaponFactoryOutsideBusy_ScatterEntranc
 	REF_STACK(const CoordStruct, coords, STACK_OFFSET(0x30, -0xC));
 
 	const auto pLink = pThis->GetNthLink();
-
-	if (pLink && pLink->GetTechnoType()->JumpJet)
-		return NotBusy;
-
 	const auto pTechno = TechnoExt::FindOccupyTechno(pCell, pThis);
 
-	if (!pTechno || TechnoExt::IsChildOf(pTechno, pThis->GetNthLink(0)))
+	if (!pTechno || pTechno == pLink || TechnoExt::IsChildOf(pTechno, pLink))
 		return NotBusy;
 
 	if (RulesExt::Global()->ExtendedScatterAction && !pTechno->Owner->IsAlliedWith(pThis->Owner))
@@ -353,8 +349,14 @@ void TechnoExt::ScatterPathCellContent(FootClass* pThis, CellClass* pCell)
 				continue;
 		}
 
-		if (pFoot->WhatAmI() == AbstractType::Unit && ((pFoot->Location.X & 0xFF) != 128 || (pFoot->Location.Y & 0xFF) != 128))
-			continue;
+		if (pFoot->WhatAmI() == AbstractType::Unit)
+		{
+			if ((pFoot->Location.X & 0xFF) != 128 || (pFoot->Location.Y & 0xFF) != 128)
+				continue;
+
+			if (!pFoot->GetTechnoType()->Turret && pFoot->Target && !pFoot->Destination)
+				continue;
+		}
 
 		if (pFoot->NavQueue.Count <= 0 && pFoot->CurrentMission == Mission::Move)
 		{

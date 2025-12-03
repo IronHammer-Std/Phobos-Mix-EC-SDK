@@ -37,7 +37,7 @@ public:
 		int AccumulatedIncome;
 		std::optional<int> CurrentLaserWeaponIndex;
 		int PoweredUpToLevel; // Distinct from UpgradeLevel, and set to highest PowersUpToLevel out of applied upgrades regardless of how many are currently applied to this building.
-		SuperClass* EMPulseSW;
+		SuperClass* CurrentEMPulseSW;
 		AbstractClass* SecondaryArchiveTarget;
 
 		ExtData(BuildingClass* OwnerObject) : Extension<BuildingClass>(OwnerObject)
@@ -52,7 +52,7 @@ public:
 			, AccumulatedIncome { 0 }
 			, CurrentLaserWeaponIndex {}
 			, PoweredUpToLevel { 0 }
-			, EMPulseSW {}
+			, CurrentEMPulseSW {}
 			, SecondaryArchiveTarget { nullptr }
 		{ }
 
@@ -61,7 +61,7 @@ public:
 		bool HasSuperWeapon(int index, bool withUpgrades) const;
 		bool HandleInfiltrate(HouseClass* pInfiltratorHouse, int moneybefore);
 		void UpdatePrimaryFactoryAI();
-		virtual ~ExtData() = default;
+		virtual ~ExtData() override;
 
 		// virtual void LoadFromINIFile(CCINIClass* pINI) override;
 

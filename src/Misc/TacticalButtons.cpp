@@ -8,9 +8,11 @@
 #include <AITriggerTypeClass.h>
 #include <JumpjetLocomotionClass.h>
 #include <HoverLocomotionClass.h>
+#include <InputManagerClass.h>
 
 #include <Ext/WarheadType/Body.h>
 #include <Utilities/TemplateDef.h>
+#include <Locomotion/AStar/AStarClass.h>
 
 // TacticalButtonsClass TacticalButtonsClass::Instance;
 
@@ -123,8 +125,8 @@ void TacticalButtonsClass::CurrentSelectInfoDraw()
 		struct TempCellData { const CellClass* Cell; int Level; };
 		auto compare = [](const TempCellData DataA, const TempCellData DataB)
 			{
-				if (DataA.Cell->Level != DataB.Cell->Level)
-					return DataA.Cell->Level < DataB.Cell->Level;
+				if (DataA.Level != DataB.Level)
+					return DataA.Level < DataB.Level;
 
 				if (DataA.Cell->MapCoords.X != DataB.Cell->MapCoords.X)
 					return DataA.Cell->MapCoords.X < DataB.Cell->MapCoords.X;
@@ -139,122 +141,160 @@ void TacticalButtonsClass::CurrentSelectInfoDraw()
 			const auto pJjLoco = locomotion_cast<JumpjetLocomotionClass*>(pFoot->Locomotor);
 			const auto pFlyLoco = locomotion_cast<FlyLocomotionClass*>(pFoot->Locomotor);
 
-			if (pJjLoco ? (pJjLoco->CurrentSpeed > 0.0) : (pFlyLoco && pFlyLoco->CurrentSpeed > 0.0))
+			if (pJjLoco || pFlyLoco)
 			{
-				const auto pDestination = pFoot->Destination;
-				auto curCoord = Point2D { pFoot->Location.X, pFoot->Location.Y };
-				auto pCurCell = MapClass::Instance.GetCellAt(CellStruct { static_cast<short>(curCoord.X >> 8), static_cast<short>(curCoord.Y >> 8) });
-				pathCells.emplace_back(pCurCell, pCurCell->GetLevel());
-				const auto pFace = pJjLoco ? &pJjLoco->LocomotionFacing : &pFoot->PrimaryFacing;
-				const int distance = pFoot->DistanceFrom(pDestination);
-				const int checkLength = (pFace->IsRotating() || !pDestination) ? 256 : Math::min((256 * 12), distance);
-				const double angle = -pFace->Current().GetRadian<65536>();
-				const auto checkCoord = Point2D { static_cast<int>(checkLength * cos(angle) + 0.5), static_cast<int>(checkLength * sin(angle) + 0.5) };
-				const int largeStep = Math::max(abs(checkCoord.X), abs(checkCoord.Y));
-				const int checkSteps = (largeStep > 256) ? (largeStep / 256 + 1) : 1;
-				const auto stepCoord = Point2D { (checkCoord.X / checkSteps), (checkCoord.Y / checkSteps) };
-
-				for (int i = 0; i < checkSteps; ++i)
+				if (InputManagerClass::Instance->IsForceFireKeyPressed() && (pJjLoco ? (pJjLoco->CurrentSpeed > 0.0) : (pFlyLoco && pFlyLoco->CurrentSpeed > 0.0)))
 				{
-					const auto lastCoord = curCoord;
-					curCoord += stepCoord;
-					pCurCell = MapClass::Instance.TryGetCellAt(CellStruct { static_cast<short>(curCoord.X >> 8), static_cast<short>(curCoord.Y >> 8) });
+					const auto pDestination = pFoot->Destination;
+					auto curCoord = Point2D { pFoot->Location.X, pFoot->Location.Y };
+					auto pCurCell = MapClass::Instance.GetCellAt(CellStruct { static_cast<short>(curCoord.X >> 8), static_cast<short>(curCoord.Y >> 8) });
+					pathCells.emplace_back(pCurCell, pCurCell->GetLevel());
+					const auto pFace = pJjLoco ? &pJjLoco->LocomotionFacing : &pFoot->PrimaryFacing;
+					const int distance = pFoot->DistanceFrom(pDestination);
+					const int checkLength = (pFace->IsRotating() || !pDestination) ? 256 : Math::min((256 * 12), distance);
+					const double angle = -pFace->Current().GetRadian<65536>();
+					const auto checkCoord = Point2D { static_cast<int>(checkLength * cos(angle)), static_cast<int>(checkLength * sin(angle)) };
+					const int largeStep = Math::max(abs(checkCoord.X), abs(checkCoord.Y));
+					const int checkSteps = (largeStep > 256) ? (largeStep / 256 + 1) : 1;
+					const auto stepCoord = Point2D { (checkCoord.X / checkSteps), (checkCoord.Y / checkSteps) };
 
-					if (!pCurCell)
-						break;
-
-					if (std::ranges::find_if(pathCells, [pCurCell](auto data){ return data.Cell == pCurCell; }) == pathCells.end())
-						pathCells.emplace_back(pCurCell, pCurCell->GetLevel());
-
-					if ((curCoord.X >> 8) != (lastCoord.X >> 8) && (curCoord.Y >> 8) != (lastCoord.Y >> 8))
+					for (int i = 0; i < checkSteps; ++i)
 					{
-						bool lastX = (abs(stepCoord.X) > abs(stepCoord.Y))
-							? (((curCoord.Y - ((stepCoord.X > 0)
-								? (curCoord.X & 0XFF)
-								: ((curCoord.X & 0XFF) - 256))
-							* checkCoord.Y / checkCoord.X) >> 8) == (curCoord.Y >> 8))
-							: (((curCoord.X - ((stepCoord.Y > 0)
-								? (curCoord.Y & 0XFF)
-								: ((curCoord.Y & 0XFF) - 256))
-							* checkCoord.X / checkCoord.Y) >> 8) != (curCoord.X >> 8));
+						const auto lastCoord = curCoord;
+						curCoord += stepCoord;
+						pCurCell = MapClass::Instance.TryGetCellAt(CellStruct { static_cast<short>(curCoord.X >> 8), static_cast<short>(curCoord.Y >> 8) });
 
-						if (const auto pCheckCell = MapClass::Instance.TryGetCellAt(lastX
-							? CellStruct { static_cast<short>(lastCoord.X >> 8), static_cast<short>(curCoord.Y >> 8) }
-							: CellStruct { static_cast<short>(curCoord.X >> 8), static_cast<short>(lastCoord.Y >> 8) }))
+						if (!pCurCell)
+							break;
+
+						if (std::ranges::find_if(pathCells, [pCurCell](auto data){ return data.Cell == pCurCell; }) == pathCells.end())
+							pathCells.emplace_back(pCurCell, pCurCell->GetLevel());
+
+						if ((curCoord.X >> 8) != (lastCoord.X >> 8) && (curCoord.Y >> 8) != (lastCoord.Y >> 8))
 						{
-							if (std::ranges::find_if(pathCells, [pCheckCell](auto data){ return data.Cell == pCheckCell; }) == pathCells.end())
-								pathCells.emplace_back(pCheckCell, pCheckCell->GetLevel());
-						}
-					}
-				}
+							bool lastX = false;
 
-				if (pCurCell && checkSteps > 1)
-				{
-					const int height = pJjLoco ? pJjLoco->Height : pFoot->GetTechnoType()->GetFlightLevel();
-					CoordStruct drawCoords { curCoord.X, curCoord.Y, (height + pCurCell->Level * 104) };
-
-					if (checkLength == distance)
-					{
-						const auto pAircraft = abstract_cast<AircraftClass*, true>(pFoot);
-
-						if (!pAircraft || !TechnoTypeExt::ExtMap.Find(pAircraft->Type)->ExtendedAircraftMissions_RearApproach.Get(RulesExt::Global()->ExtendedAircraftMissions)
-							|| !pDestination || (pAircraft->DockNowHeadingTo != pDestination && pAircraft->SpawnOwner != pDestination))
-						{
-							const auto destination = pFoot->Locomotor->Destination();
-
-							if (destination != CoordStruct::Empty)
+							if (std::abs(stepCoord.X) > std::abs(stepCoord.Y))
 							{
-								drawCoords.X = destination.X;
-								drawCoords.Y = destination.Y;
+								const int offsetX = curCoord.X & 0xFF;
+								const int deltaX = (stepCoord.X > 0) ? offsetX : (offsetX - Unsorted::LeptonsPerCell);
+								const int projectedY = curCoord.Y - deltaX * checkCoord.Y / checkCoord.X;
+								lastX = (projectedY ^ curCoord.Y) >> 8 == 0;
+							}
+							else
+							{
+								const int offsetY = curCoord.Y & 0xFF;
+								const int deltaY = (stepCoord.Y > 0) ? offsetY : (offsetY - Unsorted::LeptonsPerCell);
+								const int projectedX = curCoord.X - deltaY * checkCoord.X / checkCoord.Y;
+								lastX = (projectedX ^ curCoord.X) >> 8 != 0;
+							}
+
+							if (const auto pCheckCell = MapClass::Instance.TryGetCellAt(lastX
+								? CellStruct { static_cast<short>(lastCoord.X >> 8), static_cast<short>(curCoord.Y >> 8) }
+								: CellStruct { static_cast<short>(curCoord.X >> 8), static_cast<short>(lastCoord.Y >> 8) }))
+							{
+								if (std::ranges::find_if(pathCells, [pCheckCell](auto data){ return data.Cell == pCheckCell; }) == pathCells.end())
+									pathCells.emplace_back(pCheckCell, pCheckCell->GetLevel());
 							}
 						}
 					}
 
-					TechnoExt::DrawExtraImage(pFoot, pCurCell, drawCoords, pFace->DesiredFacing);
+					if (pCurCell && checkSteps > 1)
+					{
+						const int height = pJjLoco ? pJjLoco->Height : pFoot->GetTechnoType()->GetFlightLevel();
+						CoordStruct drawCoords { curCoord.X, curCoord.Y, (height + pCurCell->Level * 104) };
+
+						if (checkLength == distance)
+						{
+							const auto pAircraft = abstract_cast<AircraftClass*, true>(pFoot);
+
+							if (!pAircraft || !TechnoTypeExt::ExtMap.Find(pAircraft->Type)->ExtendedAircraftMissions_RearApproach.Get(RulesExt::Global()->ExtendedAircraftMissions)
+								|| !pDestination || (pAircraft->DockNowHeadingTo != pDestination && pAircraft->SpawnOwner != pDestination))
+							{
+								const auto destination = pFoot->Locomotor->Destination();
+
+								if (destination != CoordStruct::Empty)
+								{
+									drawCoords.X = destination.X;
+									drawCoords.Y = destination.Y;
+								}
+							}
+						}
+
+						TechnoExt::DrawExtraImage(pFoot, pCurCell, drawCoords, pFace->DesiredFacing);
+					}
+				}
+				else
+				{
+					const auto pFootCell = pFoot->GetCell();
+					pathCells.emplace_back(pFootCell, pFootCell->GetLevel());
 				}
 			}
-			else if (pFoot->CurrentMapCoords != CellStruct::Empty)
+			else
 			{
 				const auto pFootCell = pFoot->GetCell();
 				int cellLevel = (pFootCell->ContainsBridge() && pFoot->OnBridge) ? (pFootCell->Level + 4) : pFootCell->Level;
 				pathCells.emplace_back(pFootCell, cellLevel);
 
-				auto pCell = MapClass::Instance.GetCellAt(pFoot->CurrentMapCoords);
-				cellLevel = (pCell->ContainsBridge() && cellLevel == (pCell->Level + 4)) ? (pCell->Level + 4) : pCell->Level;
-
-				if (pCell != pFootCell)
-					pathCells.emplace_back(pCell, cellLevel);
-
-				const auto& pD = pFoot->PathDirections;
-				int face = pD[0];
-
-				if (face > -1 && face < 8)
+				if (InputManagerClass::Instance->IsForceFireKeyPressed())
 				{
-					pCell = pCell->GetNeighbourCell(static_cast<FacingType>(face));
-					cellLevel = (pCell->ContainsBridge() && cellLevel == (pCell->Level + 4)) ? cellLevel : pCell->Level;
-					pathCells.emplace_back(pCell, cellLevel);
+					auto pCell = MapClass::Instance.GetCellAt(pFoot->Locomotor->Head_To_Coord());
+					cellLevel = (pCell->ContainsBridge() && cellLevel == (pCell->Level + 4)) ? (pCell->Level + 4) : pCell->Level;
 
-					for (int i = 1; i < 24; ++i)
+					if (pCell != pFootCell)
+						pathCells.emplace_back(pCell, cellLevel);
+
+					const auto& pD = pFoot->PathDirections;
+					int face = pD[0];
+
+					if (face > -1 && face < 8)
 					{
-						const int thisFace = pD[i];
-
-						if (thisFace <= -1 || thisFace >= 8)
-							break;
-
-						face = thisFace;
 						pCell = pCell->GetNeighbourCell(static_cast<FacingType>(face));
 						cellLevel = (pCell->ContainsBridge() && cellLevel == (pCell->Level + 4)) ? cellLevel : pCell->Level;
 						pathCells.emplace_back(pCell, cellLevel);
+
+						for (int i = 1; i < 24; ++i)
+						{
+							if (pCell->Flags & CellFlags::Tube)
+								break;
+
+							const int thisFace = pD[i];
+
+							if (thisFace <= -1 || thisFace >= 8)
+								break;
+
+							face = thisFace;
+							pCell = pCell->GetNeighbourCell(static_cast<FacingType>(face));
+							cellLevel = (pCell->ContainsBridge() && cellLevel == (pCell->Level + 4)) ? cellLevel : pCell->Level;
+							pathCells.emplace_back(pCell, cellLevel);
+						}
+
+						int height = (pCell->ContainsBridge() && cellLevel == (pCell->Level + 4)) ? CellClass::BridgeHeight : 0;
+
+						if (locomotion_cast<HoverLocomotionClass*>(pFoot->Locomotor))
+						{
+							height += RulesClass::Instance->HoverHeight;
+						}
+						else if (locomotion_cast<AdvancedDriveLocomotionClass*>(pFoot->Locomotor))
+						{
+							const auto pTypeExt = TechnoExt::ExtMap.Find(pFoot)->TypeExtData;
+
+							if (pTypeExt->AdvancedDrive_Hover)
+								height += pTypeExt->AdvancedDrive_Hover_Height.Get(RulesClass::Instance->HoverHeight);
+						}
+
+						CoordStruct drawCoords = pCell->GetCoords();
+						drawCoords.Z += height;
+						TechnoExt::DrawExtraImage(pFoot, pCell, drawCoords, DirStruct(face << 13));
 					}
+				}
+				else if (!InputManagerClass::Instance->IsForceMoveKeyPressed())
+				{
+					auto pCell = MapClass::Instance.GetCellAt(pFoot->Locomotor->Head_To_Coord());
+					cellLevel = (pCell->ContainsBridge() && cellLevel == (pCell->Level + 4)) ? (pCell->Level + 4) : pCell->Level;
 
-					int height = (pCell->ContainsBridge() && cellLevel == (pCell->Level + 4)) ? CellClass::BridgeHeight : 0;
-
-					if (locomotion_cast<HoverLocomotionClass*>(pFoot->Locomotor))
-						height += RulesClass::Instance->HoverHeight;
-
-					CoordStruct drawCoords = pCell->GetCoords();
-					drawCoords.Z += height;
-					TechnoExt::DrawExtraImage(pFoot, pCell, drawCoords, DirStruct(face << 13));
+					if (pCell != pFootCell)
+						pathCells.emplace_back(pCell, cellLevel);
 				}
 			}
 		}
@@ -262,14 +302,73 @@ void TacticalButtonsClass::CurrentSelectInfoDraw()
 		{
 			const auto pType = pBuilding->Type;
 
-			if (pType->ConstructionYard)
+			if (InputManagerClass::Instance->IsForceFireKeyPressed())
 			{
 				const auto pBase = &pBuilding->Owner->Base;
 
 				for (const auto& baseCell : pBase->Cells_24)
 				{
+					if (baseCell == CellStruct::Empty)
+						continue;
+
 					const auto pBaseCell = MapClass::Instance.GetCellAt(baseCell);
 					pathCells.emplace_back(pBaseCell, pBaseCell->GetLevel());
+				}
+			}
+			else if (InputManagerClass::Instance->IsForceMoveKeyPressed())
+			{
+				const auto baseCell = pBuilding->GetMapCoords();
+
+				for (auto pFoundation = pType->GetFoundationData(true); *pFoundation != CellStruct { 0x7FFF, 0x7FFF }; ++pFoundation)
+				{
+					const auto pBaseCell = MapClass::Instance.GetCellAt(baseCell + *pFoundation);
+					pathCells.emplace_back(pBaseCell, pBaseCell->GetLevel());
+				}
+			}
+			else if (InputManagerClass::Instance->IsForceSelectKeyPressed())
+			{
+				const auto pHouse = pBuilding->Owner;
+				const auto pBase = &pHouse->Base;
+
+				for (const auto& baseNode : pBase->BaseNodes)
+				{
+					if (baseNode.MapCoords == CellStruct::Empty)
+						continue;
+
+					const auto pBaseCell = MapClass::Instance.GetCellAt(baseNode.MapCoords);
+					pathCells.emplace_back(pBaseCell, pBaseCell->GetLevel());
+
+					const auto pBaseType = BuildingTypeClass::Array.GetItemOrDefault(baseNode.BuildingTypeIndex, nullptr);
+
+					if (!pBaseType)
+						continue;
+
+					const auto pCellBuilding = pBaseCell->GetBuilding();
+
+					if (pCellBuilding && pCellBuilding->Type == pBaseType)
+						continue;
+
+					auto pImage = pBaseType->LoadBuildup();
+					int frame = 0;
+
+					if (pImage)
+						frame = ((pImage->Frames / 2) - 1);
+					else if (pImage = pBaseType->GetImage(), !pImage)
+						continue;
+
+					const int height = 1 + (pBaseCell->Level * Unsorted::LevelHeight);
+					const auto pair = TacticalClass::Instance->CoordsToClient(CellClass::Cell2Coord(pBaseCell->MapCoords, height));
+
+					if (!pair.second)
+						continue;
+
+					auto point = pair.first - Point2D { 0, 15 };
+					constexpr auto blitFlags = BlitterFlags::TransLucent50 | BlitterFlags::Centered | BlitterFlags::Nonzero | BlitterFlags::MultiPass;
+
+					const int index = pHouse->ColorSchemeIndex;
+					const auto pPalette = pBaseType->Palette ? pBaseType->Palette->GetItem(index)->LightConvert : ColorScheme::Array.GetItem(index)->LightConvert;
+
+					DSurface::Temp->DrawSHP(pPalette, pImage, frame, &point, &DSurface::ViewBounds, blitFlags, 0, 0, ZGradient::Ground, 1000, 0, nullptr, 0, 0, 0);
 				}
 			}
 			else
@@ -307,25 +406,146 @@ void TacticalButtonsClass::CurrentSelectInfoDraw()
 
 	const auto pCell = MapClass::Instance.GetCellAt(DisplayClass::Instance.CurrentFoundation_CenterCell);
 	{
-		const auto location = CoordStruct { (pCell->MapCoords.X << 8), (pCell->MapCoords.Y << 8), 0 };
-
-		if (pCell->ContainsBridge())
+		auto centerCell = pCell->MapCoords;
 		{
-			const int height = (pCell->Level + 4) * 15;
+			const auto location = CoordStruct { (centerCell.X << 8), (centerCell.Y << 8), 0 };
+
+			if (pCell->ContainsBridge())
+			{
+				const int height = (pCell->Level + 4) * 15;
+				const auto position = TacticalClass::Instance->CoordsToScreen(location) - TacticalClass::Instance->TacticalPos - Point2D { 0, (1 + height) };
+				const int zAdjust = -height - (pCell->SlopeIndex ? 12 : 2) - 16384;
+
+				DSurface::Temp->DrawSHP(FileSystem::PALETTE_PAL, Make_Global<SHPStruct*>(0x8A03FC), 2, &position,
+					&DSurface::ViewBounds, blit, 0, zAdjust, ZGradient::Ground, 1000, 0, 0, 0, 0, 0);
+			}
+
+			const int height = pCell->Level * 15;
 			const auto position = TacticalClass::Instance->CoordsToScreen(location) - TacticalClass::Instance->TacticalPos - Point2D { 0, (1 + height) };
+			const int frameIndex = pCell->SlopeIndex ? (pCell->SlopeIndex + 2) : ((pCell->FirstObject || (pCell->OccupationFlags & 0xFF)) ? 1 : 0);
 			const int zAdjust = -height - (pCell->SlopeIndex ? 12 : 2) - 16384;
 
-			DSurface::Temp->DrawSHP(FileSystem::PALETTE_PAL, Make_Global<SHPStruct*>(0x8A03FC), 2, &position,
+			DSurface::Temp->DrawSHP(FileSystem::PALETTE_PAL, Make_Global<SHPStruct*>(0x8A03FC), frameIndex, &position,
 				&DSurface::ViewBounds, blit, 0, zAdjust, ZGradient::Ground, 1000, 0, 0, 0, 0, 0);
 		}
 
-		const int height = pCell->Level * 15;
-		const auto position = TacticalClass::Instance->CoordsToScreen(location) - TacticalClass::Instance->TacticalPos - Point2D { 0, (1 + height) };
-		const int frameIndex = pCell->SlopeIndex ? (pCell->SlopeIndex + 2) : ((pCell->FirstObject || (pCell->OccupationFlags & 0xFF)) ? 1 : 0);
-		const int zAdjust = -height - (pCell->SlopeIndex ? 12 : 2) - 16384;
+		struct TempCellData { const CellClass* Cell; int Level; };
+		auto compare = [](const TempCellData DataA, const TempCellData DataB)
+		{
+			if (DataA.Level != DataB.Level)
+				return DataA.Level < DataB.Level;
 
-		DSurface::Temp->DrawSHP(FileSystem::PALETTE_PAL, Make_Global<SHPStruct*>(0x8A03FC), frameIndex, &position,
-			&DSurface::ViewBounds, blit, 0, zAdjust, ZGradient::Ground, 1000, 0, 0, 0, 0, 0);
+			if (DataA.Cell->MapCoords.X != DataB.Cell->MapCoords.X)
+				return DataA.Cell->MapCoords.X < DataB.Cell->MapCoords.X;
+
+			return DataA.Cell->MapCoords.Y < DataB.Cell->MapCoords.Y;
+		};
+		std::vector<TempCellData> checkCells;
+		checkCells.reserve(30);
+
+		if (InputManagerClass::Instance->IsForceMoveKeyPressed())
+		{
+			centerCell += CellStruct { 12, 12 };
+
+			auto checkInvisibleBarrier = [](CellClass* pCheckCell, bool alt) -> bool
+			{
+				if (alt ? pCheckCell->AltObject : pCheckCell->FirstObject)
+					return false;
+
+				const DWORD flags = alt ? pCheckCell->AltOccupationFlags : pCheckCell->OccupationFlags;
+
+				if (!(0xFF & flags))
+					return false;
+
+				if (0xC0 & flags)
+					return true;
+
+				auto checkCell = pCheckCell->MapCoords + CellStruct { 2, 2 };
+
+				for (short checkX = checkCell.X - 4; checkX <= checkCell.X; ++checkX)
+				{
+					for (short checkY = checkCell.Y - 4; checkY <= checkCell.Y; ++checkY)
+					{
+						const auto pAdjCheckCell = MapClass::Instance.GetCellAt(CellStruct { checkX, checkY });
+
+						for (auto pObject = alt ? pAdjCheckCell->AltObject : pAdjCheckCell->FirstObject; pObject; pObject = pObject->NextObject)
+						{
+							const auto absType = pObject->WhatAmI();
+
+							if (absType == AbstractType::Infantry || absType == AbstractType::Unit)
+							{
+								if (CellClass::Coord2Cell(static_cast<FootClass*>(pObject)->Locomotor->Head_To_Coord()) == pCheckCell->MapCoords)
+									return false;
+							}
+						}
+					}
+				}
+
+				return true;
+			};
+
+			for (short checkX = centerCell.X - 24; checkX <= centerCell.X; ++checkX)
+			{
+				for (short checkY = centerCell.Y - 24; checkY <= centerCell.Y; ++checkY)
+				{
+					if (const auto pCheckCell = MapClass::Instance.TryGetCellAt(CellStruct { checkX, checkY }))
+					{
+						if (checkInvisibleBarrier(pCheckCell, false))
+							checkCells.emplace_back(pCheckCell, pCheckCell->Level);
+
+						if (pCheckCell->ContainsBridge() && checkInvisibleBarrier(pCheckCell, true))
+							checkCells.emplace_back(pCheckCell, pCheckCell->Level + CellClass::BridgeLevels);
+					}
+				}
+			}
+		}
+		else if (InputManagerClass::Instance->IsForceSelectKeyPressed())
+		{
+			const int baseIndex = reinterpret_cast<int(__thiscall*)(MapClass*, CellStruct*)>(0x56D3F0)(&MapClass::Instance, &centerCell);
+			const auto& baseData = MapClass::Instance.LevelAndPassabilityStruct2pointer_70[baseIndex];
+			centerCell += CellStruct { 7, 7 };
+
+			auto checkSameSubzoneIndex = [&baseData](CellClass* pCheckCell, int level) -> bool
+			{
+				const int pathIndex = reinterpret_cast<int(__thiscall*)(MapClass*, CellStruct*)>(0x56D3F0)(&MapClass::Instance, &pCheckCell->MapCoords);
+				return baseData.word_0[level] == MapClass::Instance.LevelAndPassabilityStruct2pointer_70[pathIndex].word_0[level];
+			};
+
+			for (short checkX = centerCell.X - 14; checkX <= centerCell.X; ++checkX)
+			{
+				for (short checkY = centerCell.Y - 14; checkY <= centerCell.Y; ++checkY)
+				{
+					if (const auto pCheckCell = MapClass::Instance.TryGetCellAt(CellStruct { checkX, checkY }))
+					{
+						if (checkSameSubzoneIndex(pCheckCell, 0))
+							checkCells.emplace_back(pCheckCell, pCheckCell->Level);
+
+						if (checkSameSubzoneIndex(pCheckCell, 1))
+							checkCells.emplace_back(pCheckCell, pCheckCell->Level);
+
+						if (checkSameSubzoneIndex(pCheckCell, 2))
+							checkCells.emplace_back(pCheckCell, pCheckCell->Level);
+					}
+				}
+			}
+		}
+
+		if (const auto cellsSize = checkCells.size())
+		{
+			std::sort(&checkCells[0], &checkCells[cellsSize], compare);
+
+			for (const auto& data : checkCells)
+			{
+				const auto location = CoordStruct { (data.Cell->MapCoords.X << 8), (data.Cell->MapCoords.Y << 8), 0 };
+				const int height = data.Level * 15;
+				const auto position = TacticalClass::Instance->CoordsToScreen(location) - TacticalClass::Instance->TacticalPos - Point2D { 0, (1 + height) };
+				const int frameIndex = data.Cell->SlopeIndex ? (data.Cell->SlopeIndex + 2) : 1;
+				const int zAdjust = -height - (data.Cell->SlopeIndex ? 12 : 2) - 16384;
+
+				DSurface::Temp->DrawSHP(FileSystem::PALETTE_PAL, Make_Global<SHPStruct*>(0x8A03FC), frameIndex, &position,
+					&DSurface::ViewBounds, blit, 0, zAdjust, ZGradient::Ground, 1000, 0, 0, 0, 0, 0);
+			}
+		}
 	}
 
 	if (pTechno)
@@ -339,7 +559,9 @@ void TacticalButtonsClass::CurrentSelectInfoDraw()
 			const auto location = CoordStruct { (int)result.X, -(int)result.Y, (int)result.Z };
 			auto point1 = point;
 			auto point2 = pTactical->CoordsToScreen(technoCoord + location) - pTactical->TacticalPos;
-			DSurface::Composite->DrawLine(&point1, &point2, color);
+			auto rect = DSurface::ViewBounds;
+			rect.Height -= 32;
+			DSurface::Composite->DrawLineEx(&rect, &point1, &point2, color);
 		};
 
 		const auto thisPoint = TacticalClass::Instance->CoordsToClient(pTechno->GetCoords()).first;
@@ -381,49 +603,52 @@ void TacticalButtonsClass::CurrentSelectInfoDraw()
 			drawDashLine(pFoot->MegaTarget, COLOR_CYAN);
 			drawDashLine(pFoot->MegaDestination, COLOR_CYAN);
 
-			const auto mtxBase = pFoot->Locomotor ? pFoot->Locomotor->Draw_Matrix(nullptr) : Matrix3D::GetIdentity();
-			const auto rotateRadian = pTechno->PrimaryFacing.Current().GetRadian<32>();
-
-			auto mtx = mtxBase;
-			mtx.RotateZ((float)(pTechno->PrimaryFacing.StartFacing.GetRadian<32>() - rotateRadian));
-			mtx.TranslateX(512.0f);
-			drawMtxLine(mtx, point, COLOR_PURPLE);
-
-			mtx = mtxBase;
-			mtx.RotateZ((float)(pTechno->PrimaryFacing.DesiredFacing.GetRadian<32>() - rotateRadian));
-			mtx.TranslateX(512.0f);
-			drawMtxLine(mtx, point, COLOR_RED);
-
-			mtx = mtxBase;
-			// mtx.RotateZ((float)rotateRadian); // No need to rotate again
-			mtx.TranslateX(512.0f);
-			drawMtxLine(mtx, point, COLOR_GREEN);
-
-			const auto absType = pTechno->WhatAmI();
-			const auto pTechnoType = pTechno->GetTechnoType();
-
-			if (absType == AbstractType::Unit && pTechnoType->Turret || absType == AbstractType::Aircraft)
+			if (InputManagerClass::Instance->IsForceSelectKeyPressed())
 			{
-				auto mtxTur = mtxBase;
-				TechnoTypeExt::ApplyTurretOffset(pTechnoType, &mtxTur, 1.0);
+				const auto mtxBase = pFoot->Locomotor ? pFoot->Locomotor->Draw_Matrix(nullptr) : Matrix3D::GetIdentity();
+				const auto rotateRadian = pTechno->PrimaryFacing.Current().GetRadian<32>();
 
-				const auto turret = mtxTur.GetTranslation();
-				const auto turretPoint = pTactical->CoordsToScreen(technoCoord + CoordStruct{(int)turret.X,-(int)turret.Y,(int)turret.Z}) - pTactical->TacticalPos;
-
-				mtx = mtxTur;
-				mtx.RotateZ((float)(pTechno->SecondaryFacing.StartFacing.GetRadian<32>() - rotateRadian));
+				auto mtx = mtxBase;
+				mtx.RotateZ((float)(pTechno->PrimaryFacing.StartFacing.GetRadian<32>() - rotateRadian));
 				mtx.TranslateX(512.0f);
-				drawMtxLine(mtx, turretPoint, COLOR_BLUE);
+				drawMtxLine(mtx, point, COLOR_PURPLE);
 
-				mtx = mtxTur;
-				mtx.RotateZ((float)(pTechno->SecondaryFacing.DesiredFacing.GetRadian<32>() - rotateRadian));
+				mtx = mtxBase;
+				mtx.RotateZ((float)(pTechno->PrimaryFacing.DesiredFacing.GetRadian<32>() - rotateRadian));
 				mtx.TranslateX(512.0f);
-				drawMtxLine(mtx, turretPoint, COLOR_YELLOW);
+				drawMtxLine(mtx, point, COLOR_RED);
 
-				mtx = mtxTur;
-				mtx.RotateZ((float)(pTechno->SecondaryFacing.Current().GetRadian<32>() - rotateRadian));
+				mtx = mtxBase;
+				// mtx.RotateZ((float)rotateRadian); // No need to rotate again
 				mtx.TranslateX(512.0f);
-				drawMtxLine(mtx, turretPoint, COLOR_WHITE);
+				drawMtxLine(mtx, point, COLOR_GREEN);
+
+				const auto absType = pTechno->WhatAmI();
+				const auto pTechnoType = pTechno->GetTechnoType();
+
+				if (absType == AbstractType::Unit && pTechnoType->Turret || absType == AbstractType::Aircraft)
+				{
+					auto mtxTur = mtxBase;
+					TechnoTypeExt::ApplyTurretOffset(pTechnoType, &mtxTur, 1.0);
+
+					const auto turret = mtxTur.GetTranslation();
+					const auto turretPoint = pTactical->CoordsToScreen(technoCoord + CoordStruct{(int)turret.X,-(int)turret.Y,(int)turret.Z}) - pTactical->TacticalPos;
+
+					mtx = mtxTur;
+					mtx.RotateZ((float)(pTechno->SecondaryFacing.StartFacing.GetRadian<32>() - rotateRadian));
+					mtx.TranslateX(512.0f);
+					drawMtxLine(mtx, turretPoint, COLOR_BLUE);
+
+					mtx = mtxTur;
+					mtx.RotateZ((float)(pTechno->SecondaryFacing.DesiredFacing.GetRadian<32>() - rotateRadian));
+					mtx.TranslateX(512.0f);
+					drawMtxLine(mtx, turretPoint, COLOR_YELLOW);
+
+					mtx = mtxTur;
+					mtx.RotateZ((float)(pTechno->SecondaryFacing.Current().GetRadian<32>() - rotateRadian));
+					mtx.TranslateX(512.0f);
+					drawMtxLine(mtx, turretPoint, COLOR_WHITE);
+				}
 			}
 		}
 		else
@@ -433,23 +658,26 @@ void TacticalButtonsClass::CurrentSelectInfoDraw()
 			drawDashLine(pTechno->GetNthLink(), COLOR_WHITE);
 			drawDashLine(pTechno->QueueUpToEnter, COLOR_BLUE);
 
-			const auto mtxBase = Matrix3D::GetIdentity();
-			const auto rotateRadian = pTechno->PrimaryFacing.Current().GetRadian<32>();
+			if (InputManagerClass::Instance->IsForceSelectKeyPressed())
+			{
+				const auto mtxBase = Matrix3D::GetIdentity();
+				const auto rotateRadian = pTechno->PrimaryFacing.Current().GetRadian<32>();
 
-			auto mtx = mtxBase;
-			mtx.RotateZ((float)rotateRadian);
-			mtx.TranslateX(512.0f);
-			drawMtxLine(mtx, point, COLOR_WHITE);
+				auto mtx = mtxBase;
+				mtx.RotateZ((float)rotateRadian);
+				mtx.TranslateX(512.0f);
+				drawMtxLine(mtx, point, COLOR_WHITE);
 
-			mtx = mtxBase;
-			mtx.RotateZ((float)(pTechno->PrimaryFacing.StartFacing.GetRadian<32>() - rotateRadian));
-			mtx.TranslateX(512.0f);
-			drawMtxLine(mtx, point, COLOR_BLUE);
+				mtx = mtxBase;
+				mtx.RotateZ((float)(pTechno->PrimaryFacing.StartFacing.GetRadian<32>() - rotateRadian));
+				mtx.TranslateX(512.0f);
+				drawMtxLine(mtx, point, COLOR_BLUE);
 
-			mtx = mtxBase;
-			mtx.RotateZ((float)(pTechno->PrimaryFacing.DesiredFacing.GetRadian<32>() - rotateRadian));
-			mtx.TranslateX(512.0f);
-			drawMtxLine(mtx, point, COLOR_YELLOW);
+				mtx = mtxBase;
+				mtx.RotateZ((float)(pTechno->PrimaryFacing.DesiredFacing.GetRadian<32>() - rotateRadian));
+				mtx.TranslateX(512.0f);
+				drawMtxLine(mtx, point, COLOR_YELLOW);
+			}
 		}
 	}
 
@@ -544,7 +772,7 @@ void TacticalButtonsClass::CurrentSelectInfoDraw()
 		{
 			const auto nCF = static_cast<DWORD>(pCell->Flags);
 
-			drawText(COLOR_WHITE, "CellFlags: %d%d%d%d%d%d%d%d%d%d%d%d%d%d%d%d%d%d%d%d%d%d%d",
+			drawText(COLOR_WHITE, "CellFlags: %d%d%d %d%d%d%d %d%d%d%d %d%d%d%d %d%d%d%d %d%d%d%d",
 				((nCF >> 22) & 0x1), ((nCF >> 21) & 0x1), ((nCF >> 20) & 0x1), ((nCF >> 19) & 0x1), ((nCF >> 18) & 0x1), ((nCF >> 17) & 0x1), ((nCF >> 16) & 0x1),
 				((nCF >> 15) & 0x1), ((nCF >> 14) & 0x1), ((nCF >> 13) & 0x1), ((nCF >> 12) & 0x1), ((nCF >> 11) & 0x1), ((nCF >> 10) & 0x1), ((nCF >> 9) & 0x1), ((nCF >> 8) & 0x1),
 				((nCF >> 7) & 0x1), ((nCF >> 6) & 0x1), ((nCF >> 5) & 0x1), ((nCF >> 4) & 0x1), ((nCF >> 3) & 0x1), ((nCF >> 2) & 0x1), ((nCF >> 1) & 0x1), (nCF & 0x1));
@@ -556,11 +784,37 @@ void TacticalButtonsClass::CurrentSelectInfoDraw()
 			const auto nOF = pCell->OccupationFlags;
 			const auto nAF = pCell->AltOccupationFlags;
 
-			drawText(COLOR_WHITE, "TheOccupationFlags: %d%d%d%d%d%d%d%d", ((nOF >> 7) & 0x1), ((nOF >> 6) & 0x1), ((nOF >> 5) & 0x1), ((nOF >> 4) & 0x1), ((nOF >> 3) & 0x1), ((nOF >> 2) & 0x1), ((nOF >> 1) & 0x1), (nOF & 0x1));
-			drawText(COLOR_WHITE, "AltOccupationFlags: %d%d%d%d%d%d%d%d", ((nAF >> 7) & 0x1), ((nAF >> 6) & 0x1), ((nAF >> 5) & 0x1), ((nAF >> 4) & 0x1), ((nAF >> 3) & 0x1), ((nAF >> 2) & 0x1), ((nAF >> 1) & 0x1), (nAF & 0x1));
+			drawText(COLOR_WHITE, "TheOccupationFlags: %d%d%d%d %d%d%d%d", ((nOF >> 7) & 0x1), ((nOF >> 6) & 0x1), ((nOF >> 5) & 0x1), ((nOF >> 4) & 0x1), ((nOF >> 3) & 0x1), ((nOF >> 2) & 0x1), ((nOF >> 1) & 0x1), (nOF & 0x1));
+			drawText(COLOR_WHITE, "AltOccupationFlags: %d%d%d%d %d%d%d%d", ((nAF >> 7) & 0x1), ((nAF >> 6) & 0x1), ((nAF >> 5) & 0x1), ((nAF >> 4) & 0x1), ((nAF >> 3) & 0x1), ((nAF >> 2) & 0x1), ((nAF >> 1) & 0x1), (nAF & 0x1));
 		}
 
 		drawText(COLOR_WHITE, "TubeIndex: %d", pCell->TubeIndex);
+		drawText(COLOR_WHITE, "Passability: %d", static_cast<int>(pCell->Passability));
+		drawText(COLOR_WHITE, "BlockedNearby: %d", pCell->BlockedNeighbours);
+
+		{
+			const int pathIndex = reinterpret_cast<int(__thiscall*)(MapClass*, CellStruct*)>(0x56D3F0)(&MapClass::Instance, &pCell->MapCoords);
+			const auto& passabilityData1 = MapClass::Instance.LevelAndPassability[pathIndex];
+			const auto& passabilityData2 = MapClass::Instance.LevelAndPassabilityStruct2pointer_70[pathIndex];
+			const int level0SubzoneIndex = static_cast<unsigned short>(passabilityData2.word_0[0]);
+			const int level1SubzoneIndex = static_cast<unsigned short>(passabilityData2.word_0[1]);
+			const int level2SubzoneIndex = static_cast<unsigned short>(passabilityData2.word_0[2]);
+			const int zoneIndex = passabilityData1.ZoneArrayIndex;
+
+			drawText(COLOR_WHITE, "PathData: %d", pathIndex);
+			drawText(COLOR_WHITE, "PathIndexes: {%d},{%d},{%d},{%d}", level0SubzoneIndex, level1SubzoneIndex, level2SubzoneIndex, zoneIndex);
+			updateLine();
+
+			const int searchID = AStarClass::Instance.SearchID;
+
+			drawText(COLOR_WHITE, "PathSearchCost: [%d,%d]%.4f , [%d,%d]%.4f , [%d,%d]%.4f",
+				((AStarClass::Instance.LevelVisitedMarkers[0][level0SubzoneIndex] == searchID) ? 1 : 0), ((AStarClass::Instance.OpenSetMarkers[0][level0SubzoneIndex] == searchID) ? 1 : 0), AStarClass::Instance.GCostArray[0][level0SubzoneIndex],
+				((AStarClass::Instance.LevelVisitedMarkers[1][level1SubzoneIndex] == searchID) ? 1 : 0), ((AStarClass::Instance.OpenSetMarkers[1][level1SubzoneIndex] == searchID) ? 1 : 0), AStarClass::Instance.GCostArray[1][level1SubzoneIndex],
+				((AStarClass::Instance.LevelVisitedMarkers[2][level2SubzoneIndex] == searchID) ? 1 : 0), ((AStarClass::Instance.OpenSetMarkers[2][level2SubzoneIndex] == searchID) ? 1 : 0), AStarClass::Instance.GCostArray[2][level2SubzoneIndex]);
+			updateLine();
+		}
+
+		drawText(COLOR_WHITE, "OccupyHeights: %d", pCell->OccupyHeightsCoveringMe);
 		drawText(COLOR_WHITE, "RadLevel: %.2f", pCell->RadLevel);
 
 		{
@@ -808,6 +1062,9 @@ void TacticalButtonsClass::CurrentSelectInfoDraw()
 				drawText(color_orange, "LocoHead: (%05d,%05d,%05d)", headToCoord.X, headToCoord.Y, headToCoord.Z);
 			}
 
+			drawText(color_orange, "MovingState: (%s,%s,%s)", (pFoot->Locomotor->Is_Moving() ? "Yes" : "No"), (pFoot->Locomotor->Is_Moving_Now() ? "Yes" : "No"), (pFoot->Locomotor->Is_Really_Moving_Now() ? "Yes" : "No"));
+			drawText(color_orange, "LocoPowered: %s", (pFoot->Locomotor->Is_Powered() ? "Yes" : "No"));
+
 			{
 				constexpr const char* moveTypes[8] = { "Clear", "Cloak", "Move", "Gate", "A-Block", "E-Block", "Temp", "Unable" };
 				const auto facingType = static_cast<FacingType>(primaryFacing);
@@ -1027,9 +1284,9 @@ void TacticalButtonsClass::CurrentSelectInfoDraw()
 				}
 
 				if (pFactory && pProduct)
-					drawText(COLOR_PURPLE, "Product: (%s)[%d]", pProduct->GetTechnoType()->ID, (pFactory->GetProgress() * 100 / 54));
+					drawText(COLOR_PURPLE, "Product: (%s)[%d] {%d}", pProduct->GetTechnoType()->ID, (pFactory->GetProgress() * 100 / 54), (pFactory->QueuedObjects.Count + (pProduct ? 1 : 0)));
 				else
-					drawText(COLOR_PURPLE, "Product: (%s)[%d]", "N/A", 0);
+					drawText(COLOR_PURPLE, "Product: (%s)[%d] {%d}", "N/A", 0, (pFactory ? pFactory->QueuedObjects.Count : 0));
 
 				drawTime("RetryProduction", pBuilding->FactoryRetryTimer);
 			}
@@ -1225,3 +1482,40 @@ DEFINE_HOOK(0x4F4583, GScreenClass_DrawCurrentSelectInfo, 0x6)
 //	Game::SpecialDialog = 7; // 传送讯息页面
 //	Game::SpecialDialog = 8; // 盟友页面
 //	Game::SpecialDialog = 9; // 任务简介页面
+
+/*
+union VoxelIndexKey
+{
+	struct MainKey
+	{
+		uint32_t mainFrame  : 5; // 移动帧号（0-4）
+		uint32_t mainFace   : 5; // 车体朝向（5-9）
+		uint32_t slopeIndex : 6; // 斜坡索引（10-15）
+		uint32_t isSpawnAlt : 1; // SpawnAlt（16）
+		uint32_t reserved   : 15;// 空保留位（17-31）
+	}
+	Main;
+
+	struct TurretKey
+	{
+		uint32_t turretFace : 5; // 炮塔朝向（0-4）
+		uint32_t mainFace   : 5; // 车体朝向（5-9），如果 TurretOffset=0 ，则此段归零，因为从中心点开始画不需要有偏移
+		uint32_t slopeIndex : 6; // 斜坡索引（10-15）
+		uint32_t turretFrame: 8; // 炮塔帧号（16-23）
+		uint32_t turretNum  : 8; // 炮塔编号（24-31）
+	}
+	Turret;
+
+	struct ShadowKey
+	{
+		uint32_t offsetY    : 5; // 垂直偏移（0-4）
+		uint32_t mainFace   : 5; // 车体朝向（5-9）
+		uint32_t slopeIndex : 5; // 斜坡索引（10-14）
+		uint32_t reserved   : 16;// 空保留位（15-30）
+		uint32_t onGround   : 1; // 位于地面（31）
+	}
+	Shadow;
+
+	uint32_t Value;
+};
+*/

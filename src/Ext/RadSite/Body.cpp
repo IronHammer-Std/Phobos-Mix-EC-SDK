@@ -15,23 +15,20 @@ void RadSiteExt::ExtData::Initialize()
 
 bool RadSiteExt::ExtData::ApplyRadiationDamage(TechnoClass* pTarget, int& damage)
 {
-	const auto pWarhead = this->Type->GetWarhead();
-	const auto pWHExt = WarheadTypeExt::ExtMap.Find(pWarhead);
+	const auto pType = this->Type;
+	const auto pWarhead = pType->GetWarhead();
 
-	if (!pWHExt->IsHealthInThreshold(pTarget))
-		return false;
-
-	if (!this->Type->GetWarheadDetonate())
+	if (!pType->GetWarheadDetonate())
 	{
 		if (pTarget->ReceiveDamage(&damage, 0, pWarhead, this->RadInvoker, false, true, this->RadHouse) == DamageState::NowDead)
 			return false;
 	}
 	else
 	{
-		if (this->Type->GetWarheadDetonateFull())
+		if (pType->GetWarheadDetonateFull())
 			WarheadTypeExt::DetonateAt(pWarhead, pTarget, this->RadInvoker, damage, this->RadHouse);
 		else
-			pWHExt->DamageAreaWithTarget(pTarget->GetCoords(), damage, this->RadInvoker, pWarhead, true, this->RadHouse, pTarget);
+			WarheadTypeExt::ExtMap.Find(pWarhead)->DamageAreaWithTarget(pTarget->GetCoords(), damage, this->RadInvoker, pWarhead, true, this->RadHouse, pTarget);
 
 		if (!pTarget->IsAlive)
 			return false;
@@ -62,7 +59,7 @@ void RadSiteExt::CreateInstance(CellStruct location, int spread, int radLevel, W
 	pRadExt->SetRadLevel(std::min(radLevel, pRadType->GetLevelMax()));
 	pRadExt->CreateLight();
 
-	if (const auto pCellExt = CellExt::ExtMap.Find(MapClass::Instance.TryGetCellAt(location)))
+	if (const auto pCellExt = CellExt::ExtMap.TryFind(MapClass::Instance.TryGetCellAt(location)))
 		pCellExt->RadSites.emplace_back(pRadSite);
 }
 
@@ -70,13 +67,14 @@ void RadSiteExt::CreateInstance(CellStruct location, int spread, int radLevel, W
 void RadSiteExt::ExtData::CreateLight()
 {
 	const auto pThis = this->OwnerObject();
-	const int levelDelay = this->Type->GetLevelDelay();
-	const int lightDelay = this->Type->GetLightDelay();
+	const auto pType = this->Type;
+	const int levelDelay = pType->GetLevelDelay();
+	const int lightDelay = pType->GetLightDelay();
 
 	pThis->RadLevelTimer.Start(levelDelay);
 	pThis->RadLightTimer.Start(lightDelay);
 
-	const double lightFactor = Math::min((pThis->RadLevel * this->Type->GetLightFactor()), 2000.0);
+	const double lightFactor = Math::min(pThis->RadLevel * pType->GetLightFactor(), 2000.0);
 	const int duration = pThis->RadDuration;
 	const int intensitySteps = duration / lightDelay;
 
@@ -85,15 +83,15 @@ void RadSiteExt::ExtData::CreateLight()
 	pThis->IntensitySteps = intensitySteps;
 	pThis->IntensityDecrement = intensitySteps ? Game::F2I(lightFactor) / intensitySteps : 0;
 
-	const auto radcolor = this->Type->GetColor();
-	const double tintFactor = this->Type->GetTintFactor();
+	const auto radcolor = pType->GetColor();
+	const double tintFactor = pType->GetTintFactor();
 
 	//=========Red
-	const double red = Math::min((((1000 * radcolor.R) / 255) * tintFactor), 2000.0);
+	const double red = Math::min(((1000 * radcolor.R) / 255) * tintFactor, 2000.0);
 	//=========Green
-	const double green = Math::min((((1000 * radcolor.G) / 255) * tintFactor), 2000.0);
+	const double green = Math::min(((1000 * radcolor.G) / 255) * tintFactor, 2000.0);
 	//=========Blue
-	const double blue = Math::min((((1000 * radcolor.B) / 255) * tintFactor), 2000.0);
+	const double blue = Math::min(((1000 * radcolor.B) / 255) * tintFactor, 2000.0);
 
 	const TintStruct nTintBuffer { Game::F2I(red) ,Game::F2I(green) ,Game::F2I(blue) };
 	pThis->Tint = nTintBuffer;
@@ -117,11 +115,11 @@ void RadSiteExt::ExtData::CreateLight()
 void RadSiteExt::ExtData::Add(int amount)
 {
 	const auto pThis = this->OwnerObject();
-	const auto RadExt = RadSiteExt::ExtMap.Find(pThis);
-	int value = pThis->RadLevel * pThis->RadTimeLeft / pThis->RadDuration;
+	const auto pRadExt = RadSiteExt::ExtMap.Find(pThis);
+	const int value = pThis->RadLevel * pThis->RadTimeLeft / pThis->RadDuration;
 	pThis->Deactivate();
 	pThis->RadLevel = value + amount;
-	pThis->RadDuration = pThis->RadLevel * RadExt->Type->GetDurationMultiple();
+	pThis->RadDuration = pThis->RadLevel * pRadExt->Type->GetDurationMultiple();
 	pThis->RadTimeLeft = pThis->RadDuration;
 	this->CreateLight();
 }

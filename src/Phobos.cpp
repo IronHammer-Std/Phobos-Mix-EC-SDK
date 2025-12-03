@@ -9,6 +9,7 @@
 #include <Utilities/Macro.h>
 #include "Utilities/AresHelper.h"
 #include "Utilities/Parser.h"
+#include "Misc/MessageColumn.h"
 
 #include <Phobos.ECInit.h>
 
@@ -31,11 +32,11 @@ bool Phobos::Optimizations::DisableRadDamageOnBuildings = true;
 bool Phobos::Optimizations::DisableSyncLogging = false;
 
 #ifdef STR_GIT_COMMIT
-const wchar_t* Phobos::VersionDescription = L"Phobos sp nightly #" _STR(BUILD_NUMBER) L"+" _STR(MERGE_NUMBER) L"(" STR_GIT_COMMIT L")";
+const wchar_t* Phobos::VersionDescription = L"Phobos sp nightly #" _STR(BUILD_NUMBER) L"+" _STR(MERGE_NUMBER) L"(" STR_GIT_COMMIT L")    ";
 #elif !defined(IS_RELEASE_VER)
-const wchar_t* Phobos::VersionDescription = L"Phobos sp build #" _STR(BUILD_NUMBER) L"+" _STR(MERGE_NUMBER) L"_" _STR(MERGE_PATCH);
+const wchar_t* Phobos::VersionDescription = L"Phobos sp build #" _STR(BUILD_NUMBER) L"+" _STR(MERGE_NUMBER) L"_" _STR(MERGE_PATCH) L"    ";
 #else
-const wchar_t* Phobos::VersionDescription = L"Phobos sp release v" FILE_VERSION_STR;
+const wchar_t* Phobos::VersionDescription = L"Phobos sp release v" FILE_VERSION_STR L"    ";
 #endif
 
 
@@ -61,7 +62,7 @@ void Phobos::CmdLineParse(char** ppArgs, int nNumArgs)
 		{
 			Phobos::AppIconPath = ppArgs[++i];
 		}
-		if (_stricmp(pArg, "-SPB=" _STR(BUILD_NUMBER) "+" _STR(MERGE_NUMBER) "_" _STR(MERGE_PATCH)) == 0)
+		if (_stricmp(pArg, "-SPBS=" _STR(BUILD_NUMBER) "+" _STR(MERGE_NUMBER) "_" _STR(MERGE_PATCH)) == 0)
 		{
 			Phobos::HideWarning = true;
 		}
@@ -226,7 +227,7 @@ bool Phobos::IsTrialValid()
 
 	const double daysPassed = difftime(currentTime, compileTime) / (60 * 60 * 24);
 
-	if (daysPassed > 15)
+	if (daysPassed > 30)
 		return false;
 
 	if (std::filesystem::exists(recordFile))
@@ -346,6 +347,37 @@ DEFINE_HOOK(0x4F4583, GScreenClass_DrawText, 0x6)
 	return 0;
 }
 
+DEFINE_HOOK(0x684AD3, UnknownClass_sub_684620_InitMessageList, 0x5)
+{
+	if (!Phobos::PoweredByEC && !Phobos::HideWarning)
+	{
+		const time_t compileTime = Phobos::GetCompile();
+		const time_t currentTime = Phobos::GetCurrent();
+		const int daysUsed = static_cast<int>(difftime(currentTime, compileTime) / (60 * 60 * 24));
+		const int daysLeft = 30 - daysUsed;
+		constexpr const wchar_t* const text = L"正在使用Phobos特别合并构建#" _STR(BUILD_NUMBER) L"+" _STR(MERGE_NUMBER) L"_" _STR(MERGE_PATCH) L"。若在使用过程中发生问题，请按说明中的方法反馈。  — 绯红热茶";
+		wchar_t buffer[0x40];
+
+		if (daysLeft > 7)
+			swprintf_s(buffer, L"剩余试用期：%2d天", daysLeft);
+		else
+			swprintf_s(buffer, L"剩余试用期：%2d天，注意及时在群内获取最新版本。", daysLeft);
+
+		if (Phobos::Config::MessageDisplayInCenter)
+		{
+			MessageColumnClass::Instance.AddMessage(nullptr, text, 480, false);
+			MessageColumnClass::Instance.AddMessage(nullptr, buffer, 480, false, 100);
+		}
+		else
+		{
+			MessageListClass::Instance.PrintMessage(text, 480, 5, true);
+			MessageListClass::Instance.PrintMessage(buffer, 480, 5, true);
+		}
+	}
+
+	return 0;
+}
+
 // Mainly used to disable hooks for optimization.
 // Called after loading saved game and at end of scenario start after all INI data etc has been initialized.
 // Only executed once per game session.
@@ -358,18 +390,28 @@ void Phobos::ApplyOptimizations()
 	if (Phobos::Optimizations::DisableRadDamageOnBuildings)
 		Patch::Apply_RAW(0x43FB23, { 0x53, 0x55, 0x56, 0x8B, 0xF1 });
 
-	if (SessionClass::IsMultiplayer())
+	if (!Phobos::Config::DebugToolEnable)
 	{
-		// Disable MainLoop_SaveGame
-		Patch::Apply_LJMP(0x55DBCD, 0x55DC99);
+		Patch::Apply_RAW(0x6F9C80, { 0x8B, 0x8E, 0x1C, 0x02, 0x00, 0x00 });
+		Patch::Apply_RAW(0x6F91EC, { 0x8B, 0x8E, 0x1C, 0x02, 0x00, 0x00 });
+		Patch::Apply_RAW(0x7043B9, { 0x8B, 0xF8, 0x8B, 0xCF, 0x8B, 0x17 });
+		Patch::Apply_RAW(0x73B0C5, { 0x8B, 0xF0, 0x8B, 0xCE, 0x8B, 0x06 });
+		Patch::Apply_RAW(0x7410D6, { 0x8B, 0x10, 0x8B, 0xC8, 0xFF, 0x52, 0x2C });
 	}
-	else
+
+	if (RulesExt::Global()->SmudgeUpdateTime <= 0)
+	{
+		Patch::Apply_RAW(0x6B56AC, { 0x52, 0x8B, 0x56, 0x34, 0x50 });
+		Patch::Apply_RAW(0x6B60DE, { 0x8B, 0x96, 0x94, 0x02, 0x00, 0x00 });
+	}
+
+	if (!SessionClass::IsMultiplayer())
 	{
 		// Disable Random2Class_Random_SyncLog
-		Patch::Apply_RAW(0x65C7D0, { 0xC3, 0x90, 0x90, 0x90, 0x90, 0x90 });
+		Patch::Apply_RAW(0x65C7D0, { 0xC3, 0x90, 0x90, 0x90, 0x90 });
 
 		// Disable Random2Class_RandomRanged_SyncLog
-		Patch::Apply_RAW(0x65C88A, { 0xC2, 0x08, 0x00, 0x90, 0x90, 0x90 });
+		Patch::Apply_RAW(0x65C88A, { 0xC2, 0x08, 0x00, 0x90, 0x90 });
 
 		// Disable FacingClass_Set_SyncLog
 		Patch::Apply_RAW(0x4C9300, { 0x83, 0xEC, 0x10, 0x53, 0x56 });

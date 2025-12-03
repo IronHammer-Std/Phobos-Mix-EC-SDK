@@ -2,6 +2,7 @@
 
 #include <CellClass.h>
 
+#include <Helpers/Macro.h>
 #include <Utilities/Container.h>
 #include <Utilities/Constructs.h>
 #include <Utilities/Template.h>
@@ -37,14 +38,22 @@ public:
 		std::vector<RadSiteClass*> RadSites;
 		std::vector<RadLevel> RadLevels;
 
+		int InfantryCount;
+
 		UnitClass* IncomingUnit;
 		UnitClass* IncomingUnitAlt;
+
+		int SmudgeGenerate;
+		BlitterFlags SmudgeState;
 
 		ExtData(CellClass* OwnerObject) : Extension<CellClass>(OwnerObject)
 			, RadSites {}
 			, RadLevels {}
+			, InfantryCount { 0 }
 			, IncomingUnit { nullptr }
 			, IncomingUnitAlt { nullptr }
+			, SmudgeGenerate { 0 }
+			, SmudgeState { BlitterFlags::None }
 		{ }
 
 		virtual ~ExtData() = default;

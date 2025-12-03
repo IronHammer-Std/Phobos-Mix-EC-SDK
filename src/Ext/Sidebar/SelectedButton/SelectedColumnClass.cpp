@@ -6,8 +6,8 @@
 
 #include <Ext/Side/Body.h>
 
-SelectedColumnClass::SelectedColumnClass(unsigned int id, int x, int y, int width, int height)
-	: ControlClass(id, x, y, width, height, static_cast<GadgetFlag>(0), false)
+SelectedColumnClass::SelectedColumnClass(int x, int y, int width, int height)
+	: GadgetClass(x, y, width, height, static_cast<GadgetFlag>(0), false)
 {
 	this->Disabled = !Phobos::Config::SelectedDisplay_Enable || !SelectedInfoClass::Instance.SingleSelect || !SelectedInfoClass::Instance.ObtainSelect;
 }
@@ -55,7 +55,7 @@ void SelectedColumnClass::DrawInfo() const
 		{
 			if (pThis->IsDisguisedAs(HouseClass::CurrentPlayer))
 			{
-				if (const auto pDisguiseTypeExt = TechnoTypeExt::ExtMap.Find(TechnoTypeExt::GetTechnoType(pThis->Disguise)))
+				if (const auto pDisguiseTypeExt = TechnoTypeExt::ExtMap.TryFind(TechnoTypeExt::GetTechnoType(pThis->Disguise)))
 				{
 					if (const auto pFakeType = pDisguiseTypeExt->FakeOf.Get())
 						return pFakeType;
@@ -72,7 +72,7 @@ void SelectedColumnClass::DrawInfo() const
 	};
 
 	const auto pDisplayType = getDisplayType();
-	const auto pDisplayTypeExt = TechnoTypeExt::ExtMap.Find(TechnoTypeExt::GetTechnoType(pDisplayType));
+	const auto pDisplayTypeExt = TechnoTypeExt::ExtMap.TryFind(TechnoTypeExt::GetTechnoType(pDisplayType));
 
 	TextPrintType printType = TextPrintType::Center | TextPrintType::Point8;
 	COLORREF color = Drawing::RGB_To_Int(Drawing::TooltipColor);
@@ -320,8 +320,8 @@ void SelectedColumnClass::DrawInfo() const
 
 // ----------------------------------------
 
-SelectedBottomClass::SelectedBottomClass(unsigned int id, int x, int y, int width, int height)
-	: ControlClass(id, x, y, width, height, static_cast<GadgetFlag>(0), false)
+SelectedBottomClass::SelectedBottomClass(int x, int y, int width, int height)
+	: GadgetClass(x, y, width, height, static_cast<GadgetFlag>(0), false)
 {
 	this->Disabled = !Phobos::Config::SelectedDisplay_Enable;
 }
@@ -395,13 +395,23 @@ void SelectedBottomClass::DrawInfo() const
 
 	location.X += 80;
 	{
-		const auto& timer = ScenarioClass::Instance->ElapsedTimer;
-		auto time = timer.TimeLeft;
+		auto second = 0;
 
-		if (timer.StartTime != -1)
-			time += SystemTimer::GetTime() - timer.StartTime;
+		if (RulesExt::Global()->SelectedIngameTimer)
+		{
+			second = Unsorted::CurrentFrame / 15;
+		}
+		else
+		{
+			const auto& timer = ScenarioClass::Instance->ElapsedTimer;
+			auto time = timer.TimeLeft;
 
-		const auto second = time / 60;
+			if (timer.StartTime != -1)
+				time += SystemTimer::GetTime() - timer.StartTime;
+
+			second = time / 60;
+		}
+
 		const auto minute = second / 60;
 
 		wchar_t buffer[0x20];

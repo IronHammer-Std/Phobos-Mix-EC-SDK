@@ -6,12 +6,14 @@
 #include <Utilities/Container.h>
 #include <Utilities/TemplateDef.h>
 #include <Utilities/Macro.h>
-#include <Ext/Bullet/Trajectories/PhobosTrajectory.h>
+#include <Ext/Bullet/Body.h>
 #include <New/Entity/ShieldClass.h>
 #include <New/Entity/LaserTrailClass.h>
 #include <New/Entity/AttachEffectClass.h>
 #include <New/Entity/AttachmentClass.h>
 #include <New/Entity/SquadManagerClass.h>
+
+extern "C" __declspec(dllexport) bool __cdecl ConvertToType_Phobos(TechnoClass* pThis, TechnoTypeClass* toType);
 
 class BulletClass;
 
@@ -47,6 +49,7 @@ public:
 		AnimTypeClass* MindControlRingAnimType;
 		int DamageNumberOffset;
 		int Strafe_BombsDroppedThisRound;
+		CellClass* Strafe_TargetCell;
 		int CurrentAircraftWeaponIndex;
 		bool IsInTunnel;
 		bool IsBurrowed;
@@ -63,7 +66,7 @@ public:
 		CDTimerClass UnitAutoDeployTimer;
 		WeaponTypeClass* LastWeaponType;
 		CoordStruct LastWeaponFLH;
-		std::shared_ptr<PhobosMap<DWORD, PhobosTrajectory::GroupData>> TrajectoryGroup;
+		std::shared_ptr<PhobosMap<BulletTypeClass*, BulletGroupData>> TrajectoryGroup;
 		std::vector<RecoilData> ExtraTurretRecoil;
 		std::vector<RecoilData> ExtraBarrelRecoil;
 		int ScatteringStopFrame;
@@ -93,6 +96,10 @@ public:
 		bool KeepTargetOnMove;
 		CellStruct LastSensorsMapCoords;
 		CDTimerClass TiberiumEater_Timer;
+		bool DelayedFireSequencePaused;
+		int DelayedFireWeaponIndex;
+		CDTimerClass DelayedFireTimer;
+		AnimClass* CurrentDelayedFireAnim;
 
 		bool AggressiveStance;                  // Aggressive stance that will auto target buildings
 		bool CeaseFireStance;
@@ -125,7 +132,12 @@ public:
 		// Ares
 		std::optional<bool> AltOccupation; // if the unit marks cell occupation flags, this is set to whether it uses the "high" occupation members
 
-		CDTimerClass FiringAnimationTimer;
+		bool IsSelected;
+		bool ResetLocomotor;
+
+		// Replaces use of TechnoClass->Animation StageClass timer for IsSimpleDeployer to simplify
+		// the deploy animation timer calcs and eliminate possibility of outside interference.
+		CDTimerClass SimpleDeployerAnimationTimer;
 
 		// cache tint values
 		int TintColorOwner;
@@ -139,8 +151,11 @@ public:
 
 		bool UndergroundTracked;
 		bool SpecialTracked;
+		bool FallingDownTracked;
 
-		DynamicVectorClass<BulletClass*> BulletsTargetingMe;
+		int BulletsTargetingMeCount;
+
+		bool JumpjetStraightAscend; // Is set to true jumpjet units will ascend straight and do not adjust rotation or position during it.
 
 		ExtData(TechnoClass* OwnerObject) : Extension<TechnoClass>(OwnerObject)
 			, TypeExtData { nullptr }
@@ -163,6 +178,7 @@ public:
 			, MindControlRingAnimType { nullptr }
 			, DamageNumberOffset { INT32_MIN }
 			, Strafe_BombsDroppedThisRound { 0 }
+			, Strafe_TargetCell { nullptr }
 			, CurrentAircraftWeaponIndex {}
 			, IsInTunnel { false }
 			, IsBurrowed { false }
@@ -212,15 +228,21 @@ public:
 			, TiberiumEater_Timer {}
 			, AirstrikeTargetingMe { nullptr }
 			, MyTrackingLasers { }
-			, MyTrackingLasersTarget { }
+			, MyTrackingLasersTarget { nullptr }
 			, SquadManager { nullptr }
 			, ParentAttachment { nullptr }
 			, ChildAttachments {}
 			, ThisOccupationCell { nullptr }
 			, LastOccupationCell { nullptr }
 			, AltOccupation {}
-			, FiringAnimationTimer {}
+			, SimpleDeployerAnimationTimer {}
+			, DelayedFireSequencePaused { false }
+			, DelayedFireWeaponIndex { -1 }
+			, DelayedFireTimer {}
+			, CurrentDelayedFireAnim { nullptr }
 			, AttachedEffectInvokerCount { 0 }
+			, IsSelected { false }
+			, ResetLocomotor { false }
 			, TintColorOwner { 0 }
 			, TintColorAllies { 0 }
 			, TintColorEnemies { 0 }
@@ -230,7 +252,9 @@ public:
 			, AttackMoveFollowerTempCount { 0 }
 			, UndergroundTracked { false }
 			, SpecialTracked { false }
-			, BulletsTargetingMe {}
+			, BulletsTargetingMeCount { 0 }
+			, FallingDownTracked { false }
+			, JumpjetStraightAscend { false }
 		{ }
 
 		void OnEarlyUpdate();
@@ -279,9 +303,8 @@ public:
 		void UpdateCachedClick();
 		void ApplyMindControlRangeLimit();
 		int ApplyForceWeaponInRange(AbstractClass* pTarget);
+		void ResetDelayedFireTimer();
 		void UpdateTintValues();
-
-		UnitTypeClass* GetUnitTypeExtra() const;
 
 		virtual ~ExtData() override;
 		virtual void InvalidatePointer(void* ptr, bool bRemoved) override;
@@ -365,7 +388,8 @@ public:
 	static void UnlimboAttachments(TechnoClass* pThis);
 	static void LimboAttachments(TechnoClass* pThis);
 	static void TransferAttachments(TechnoClass* pThis, TechnoClass* pThat);
-
+	static bool ShouldInheritTarget(TechnoClass* pThis);
+	static TechnoClass* GetTrainParent(TechnoClass* pThis);
 	static bool IsAttached(TechnoClass* pThis);
 	static bool HasAttachmentLoco(FootClass* pThis); // FIXME shouldn't be here
 	static bool DoesntOccupyCellAsChild(TechnoClass* pThis);
@@ -374,12 +398,13 @@ public:
 	static TechnoClass* GetTopLevelParent(TechnoClass* pThis);
 
 	static void ChangeOwnerMissionFix(FootClass* pThis);
-	static void KillSelf(TechnoClass* pThis, AutoDeathBehavior deathOption, AnimTypeClass* pVanishAnimation, bool isInLimbo = false);
+	static void KillSelf(TechnoClass* pThis, AutoDeathBehavior deathOption, const std::vector<AnimTypeClass*>& pVanishAnimation, bool isInLimbo = false);
 	static void Kill(TechnoClass* pThis, ObjectClass* pAttacker, HouseClass* pAttackingHouse);
 	static void Kill(TechnoClass* pThis, TechnoClass* pAttacker);
 	static void ObjectKilledBy(TechnoClass* pThis, TechnoClass* pKiller);
 	static void UpdateSharedAmmo(TechnoClass* pThis);
 	static double GetCurrentSpeedMultiplier(FootClass* pThis);
+	static double GetCurrentFirepowerMultiplier(TechnoClass* pThis);
 	static void DrawSelfHealPips(TechnoClass* pThis, Point2D* pLocation, RectangleStruct* pBounds);
 	static void DrawInsignia(TechnoClass* pThis, Point2D* pLocation, RectangleStruct* pBounds);
 	static void ApplyGainedSelfHeal(TechnoClass* pThis);
@@ -407,6 +432,16 @@ public:
 	static void ProcessDigitalDisplays(TechnoClass* pThis);
 	static void GetValuesForDisplay(TechnoClass* pThis, DisplayInfoType infoType, int& value, int& maxValue, int infoIndex);
 	static void GetDigitalDisplayFakeHealth(TechnoClass* pThis, int& value, int& maxValue);
+	static void CreateDelayedFireAnim(TechnoClass* pThis, AnimTypeClass* pAnimType, int weaponIndex, bool attach, bool center, bool removeOnNoDelay, bool onTurret, CoordStruct firingCoords);
+	static bool HandleDelayedFireWithPauseSequence(TechnoClass* pThis, WeaponTypeClass* pWeapon, int weaponIndex, int frame, int firingFrame);
+	static bool IsHealthInThreshold(TechnoClass* pObject, double min, double max);
+	static UnitTypeClass* GetUnitTypeExtra(UnitClass* pUnit);
+	static AircraftTypeClass* GetAircraftTypeExtra(AircraftClass* pAircraft);
+	static bool CannotMove(UnitClass* pThis);
+	static bool HasAmmoToDeploy(TechnoClass* pThis);
+	static void HandleOnDeployAmmoChange(TechnoClass* pThis, int maxAmmoOverride = -1);
+	static bool SimpleDeployerAllowedToDeploy(UnitClass* pThis, bool defaultValue, bool alwaysCheckLandTypes);
+
 	static void DrawExtraImage(TechnoClass* pThis, CellClass* pCell, const CoordStruct& coords, DirStruct dir = DirStruct(0));
 	static void DrawExtraImage(TechnoClass* pThis, const Point2D& location, const RectangleStruct& bounds, DirStruct dir = DirStruct(0), bool transparent = false, Sequence action = Sequence::Nothing, int tilt = -1);
 	static void DrawExtraImage(UnitClass* pThis, Point2D* pLocation, RectangleStruct* pBounds, DirStruct dir = DirStruct(0), bool transparent = false, int tilt = -1);

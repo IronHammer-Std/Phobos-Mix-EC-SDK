@@ -1,15 +1,41 @@
 ﻿#include "DistributionMode.h"
 
-#include <Ext/TechnoType/Body.h>
+#include <Ext/Techno/Body.h>
 #include <Utilities/Helpers.Alex.h>
 #include <Helpers/Macro.h>
 
 #include <HouseClass.h>
+#include <ShapeButtonClass.h>
 
 bool DistributionModeHoldDownCommandClass::Enabled = false;
 bool DistributionModeHoldDownCommandClass::OnMessageShowed = false;
 bool DistributionModeHoldDownCommandClass::OffMessageShowed = false;
 int DistributionModeHoldDownCommandClass::ShowTime = 0;
+
+const char* SwitchNoMoveCommandClass::GetName() const
+{
+	return "Switch No Move Command";
+}
+
+const wchar_t* SwitchNoMoveCommandClass::GetUIName() const
+{
+	return GeneralUtils::LoadStringUnlessMissing("TXT_SWITCH_NOMOVE", L"Switch no-move");
+}
+
+const wchar_t* SwitchNoMoveCommandClass::GetUICategory() const
+{
+	return CATEGORY_CONTROL;
+}
+
+const wchar_t* SwitchNoMoveCommandClass::GetUIDescription() const
+{
+	return GeneralUtils::LoadStringUnlessMissing("TXT_SWITCH_NOMOVE_DESC", L"Make unit does not move around the target when receiving no-move command");
+}
+
+void SwitchNoMoveCommandClass::Execute(WWKey eInput) const
+{
+	Phobos::Config::ApplyNoMoveCommand = !Phobos::Config::ApplyNoMoveCommand;
+}
 
 const char* DistributionModeSpreadCommandClass::GetName() const
 {
@@ -91,30 +117,58 @@ bool DistributionModeHoldDownCommandClass::ExtraTriggerCondition(WWKey eInput) c
 void DistributionModeHoldDownCommandClass::Execute(WWKey eInput) const
 {
 	if (eInput & WWKey::Release)
+		DistributionModeHoldDownCommandClass::DistributionModeOff();
+	else
+		DistributionModeHoldDownCommandClass::DistributionModeOn();
+}
+
+void DistributionModeHoldDownCommandClass::DistributionModeOn()
+{
+	if (DistributionModeHoldDownCommandClass::Enabled)
+		return;
+
+	if (SessionClass::Instance.MultiplayerObserver)
+		return;
+
+	DistributionModeHoldDownCommandClass::Enabled = true;
+
+	if (const auto pButton = reinterpret_cast<ShapeButtonClass*(__fastcall*)(int)>(0x6CFD40)(ShapeButtonHelper::NewButtonIndexes[0]))
 	{
-		DistributionModeHoldDownCommandClass::Enabled = false;
-
-		if (HouseClass::IsCurrentPlayerObserver() || SessionClass::Instance.MultiplayerObserver)
-			return;
-
-		VocClass::PlayGlobal(RulesExt::Global()->EndDistributionModeSound, 0x2000, 1.0);
-
-		if (!DistributionModeHoldDownCommandClass::OffMessageShowed)
-		{
-			DistributionModeHoldDownCommandClass::OffMessageShowed = true;
-			MessageListClass::Instance.PrintMessage(GeneralUtils::LoadStringUnlessMissing("MSG:DistributionModeOff", L"Distribution mode unabled."), RulesClass::Instance->MessageDelay, HouseClass::CurrentPlayer->ColorSchemeIndex, true);
-		}
+		if (!pButton->IsOn)
+			pButton->TurnOn();
 	}
-	else if (!HouseClass::IsCurrentPlayerObserver() && !SessionClass::Instance.MultiplayerObserver)
-	{
-		DistributionModeHoldDownCommandClass::Enabled = true;
-		VocClass::PlayGlobal(RulesExt::Global()->StartDistributionModeSound, 0x2000, 1.0);
 
-		if (!DistributionModeHoldDownCommandClass::OnMessageShowed)
-		{
-			DistributionModeHoldDownCommandClass::OnMessageShowed = true;
-			MessageListClass::Instance.PrintMessage(GeneralUtils::LoadStringUnlessMissing("MSG:DistributionModeOn", L"Distribution mode enabled."), RulesClass::Instance->MessageDelay, HouseClass::CurrentPlayer->ColorSchemeIndex, true);
-		}
+	VocClass::PlayGlobal(RulesExt::Global()->StartDistributionModeSound, 0x2000, 1.0);
+
+	if (!DistributionModeHoldDownCommandClass::OnMessageShowed)
+	{
+		DistributionModeHoldDownCommandClass::OnMessageShowed = true;
+		MessageListClass::Instance.PrintMessage(GeneralUtils::LoadStringUnlessMissing("MSG:DistributionModeOn", L"Distribution mode enabled."), RulesClass::Instance->MessageDelay, HouseClass::CurrentPlayer->ColorSchemeIndex, true);
+	}
+}
+
+void DistributionModeHoldDownCommandClass::DistributionModeOff()
+{
+	if (!DistributionModeHoldDownCommandClass::Enabled)
+		return;
+
+	DistributionModeHoldDownCommandClass::Enabled = false;
+
+	if (const auto pButton = reinterpret_cast<ShapeButtonClass*(__fastcall*)(int)>(0x6CFD40)(ShapeButtonHelper::NewButtonIndexes[0]))
+	{
+		if (pButton->IsOn)
+			pButton->TurnOff();
+	}
+
+	if (SessionClass::Instance.MultiplayerObserver)
+		return;
+
+	VocClass::PlayGlobal(RulesExt::Global()->EndDistributionModeSound, 0x2000, 1.0);
+
+	if (!DistributionModeHoldDownCommandClass::OffMessageShowed)
+	{
+		DistributionModeHoldDownCommandClass::OffMessageShowed = true;
+		MessageListClass::Instance.PrintMessage(GeneralUtils::LoadStringUnlessMissing("MSG:DistributionModeOff", L"Distribution mode unabled."), RulesClass::Instance->MessageDelay, HouseClass::CurrentPlayer->ColorSchemeIndex, true);
 	}
 }
 
@@ -128,44 +182,129 @@ void DistributionModeHoldDownCommandClass::DistributionSpreadModeReduce()
 	Phobos::Config::DistributionSpreadMode = std::max(0, Phobos::Config::DistributionSpreadMode - 1);
 }
 
-DEFINE_HOOK(0x4AE818, DisplayClass_sub_4AE750_AutoDistribution, 0xA)
+void __fastcall DistributionModeHoldDownCommandClass::ClickedWaypoint(ObjectClass* pSelect, int idxPath, signed char idxWP)
 {
-	enum { SkipGameCode = 0x4AE85C };
+	pSelect->AssignPlanningPath(idxPath, idxWP);
 
-	GET(ObjectClass* const, pTarget, EBP);
-	GET_STACK(const Action, mouseAction, STACK_OFFSET(0x20, 0xC));
+	if (const auto pFoot = abstract_cast<FootClass*, true>(pSelect))
+		pFoot->unknown_bool_430 = false;
 
-	const auto count = ObjectClass::CurrentObjects.Count;
+	if (const auto pExt = TechnoExt::ExtMap.TryFind(abstract_cast<TechnoClass*, true>(pSelect)))
+	{
+		for (const auto& pAttachment : pExt->ChildAttachments)
+		{
+			if (pAttachment->Child && pAttachment->GetType()->InheritCommands)
+				DistributionModeHoldDownCommandClass::ClickedWaypoint(pAttachment->Child, idxPath, idxWP);
+		}
+	}
+}
+
+void __fastcall DistributionModeHoldDownCommandClass::ClickedTargetAction(ObjectClass* pSelect, Action action, ObjectClass* pTarget)
+{
+	pSelect->ObjectClickedAction(action, pTarget, false);
+	Unsorted::MoveFeedback = false;
+
+	if (const auto pExt = TechnoExt::ExtMap.TryFind(abstract_cast<TechnoClass*, true>(pSelect)))
+	{
+		for (const auto& pAttachment : pExt->ChildAttachments)
+		{
+			if (pAttachment->Child && pAttachment->GetType()->InheritCommands)
+				DistributionModeHoldDownCommandClass::ClickedTargetAction(pAttachment->Child, action, pTarget);
+		}
+	}
+}
+
+void __fastcall DistributionModeHoldDownCommandClass::ClickedCellAction(ObjectClass* pSelect, Action action, CellStruct* pCell, CellStruct* pSecondCell)
+{
+	pSelect->CellClickedAction(action, pCell, pSecondCell, false);
+	Unsorted::MoveFeedback = false;
+
+	if (const auto pExt = TechnoExt::ExtMap.TryFind(abstract_cast<TechnoClass*, true>(pSelect)))
+	{
+		for (const auto& pAttachment : pExt->ChildAttachments)
+		{
+			if (pAttachment->Child && pAttachment->GetType()->InheritCommands)
+				DistributionModeHoldDownCommandClass::ClickedCellAction(pAttachment->Child, action, pCell, pSecondCell);
+		}
+	}
+}
+
+void __fastcall DistributionModeHoldDownCommandClass::AreaGuardAction(TechnoClass* pTechno)
+{
+	pTechno->ClickedMission(Mission::Area_Guard, reinterpret_cast<ObjectClass*>(pTechno->GetCellAgain()), nullptr, nullptr);
+	Unsorted::MoveFeedback = false;
+
+	if (const auto pExt = TechnoExt::ExtMap.Find(pTechno))
+	{
+		for (const auto& pAttachment : pExt->ChildAttachments)
+		{
+			if (pAttachment->Child && pAttachment->GetType()->InheritCommands)
+				DistributionModeHoldDownCommandClass::AreaGuardAction(pAttachment->Child);
+		}
+	}
+}
+
+DEFINE_HOOK(0x4AE7B3, DisplayClass_ActiveClickWith_Iterate, 0x0)
+{
+	enum { SkipGameCode = 0x4AE99B };
+
+	const int count = ObjectClass::CurrentObjects.Count;
 
 	if (count > 0)
 	{
-		const auto mode1 = Phobos::Config::DistributionSpreadMode;
-		const auto mode2 = Phobos::Config::DistributionFilterMode;
-
-		// Distribution mode main
-		if (DistributionModeHoldDownCommandClass::Enabled && mode1 && count > 1 && mouseAction != Action::NoMove && !PlanningNodeClass::PlanningModeActive
-			&& (pTarget->AbstractFlags & AbstractFlags::Techno) != AbstractFlags::None && !pTarget->IsInAir())
 		{
-			VocClass::PlayGlobal(RulesExt::Global()->AddDistributionModeCommandSound, 0x2000, 1.0);
+			GET_STACK(int, idxPath, STACK_OFFSET(0x18, -0x8));
+			GET_STACK(unsigned char, idxWP, STACK_OFFSET(0x18, -0xC));
 
-			const auto pTargetHouse = static_cast<TechnoClass*>(pTarget)->Owner;
-			const bool targetIsNeutral = pTargetHouse->IsNeutral();
-
-			const auto range = (2 << mode1);
-			const auto center = pTarget->GetCoords();
-			const auto pItems = Helpers::Alex::getCellSpreadItems(center, range);
-
-			std::vector<std::pair<TechnoClass*, int>> record;
-			const auto maxSize = pItems.size();
-			record.reserve(maxSize);
-
-			int current = 1;
-
-			for (const auto& pItem : pItems)
+			for (const auto& pSelect : ObjectClass::CurrentObjects)
 			{
-				if (!pItem->IsDisguisedAs(HouseClass::CurrentPlayer)
-					&& (pItem->CloakState != CloakState::Cloaked || pItem->GetCell()->Sensors_InclHouse(HouseClass::CurrentPlayer->ArrayIndex)))
+				DistributionModeHoldDownCommandClass::ClickedWaypoint(pSelect, idxPath, idxWP);
+			}
+		}
+
+		GET_STACK(ObjectClass* const, pTarget, STACK_OFFSET(0x18, 0x4));
+		GET_STACK(Action const, action, STACK_OFFSET(0x18, 0xC));
+
+		if (pTarget)
+		{
+			const int spreadMode = Phobos::Config::DistributionSpreadMode;
+			const int filterMode = Phobos::Config::DistributionFilterMode;
+			const bool noMove = !Phobos::Config::ApplyNoMoveCommand;
+			const auto pTechno = abstract_cast<TechnoClass*, true>(pTarget);
+
+			// Distribution mode main
+			if (DistributionModeHoldDownCommandClass::Enabled
+				&& spreadMode
+				&& count > 1
+				&& action != Action::NoMove
+				&& !PlanningNodeClass::PlanningModeActive
+				&& pTechno
+				&& !pTechno->IsInAir()
+				&& (HouseClass::CurrentPlayer->IsAlliedWith(pTechno->Owner)
+					? Phobos::Config::AllowDistributionCommand_AffectsAllies
+					: Phobos::Config::AllowDistributionCommand_AffectsEnemies))
+			{
+				VocClass::PlayGlobal(RulesExt::Global()->AddDistributionModeCommandSound, 0x2000, 1.0);
+				const bool targetIsNeutral = pTechno->Owner->IsNeutral();
+				const auto pType = pTechno->GetTechnoType();
+				const int range = (2 << spreadMode);
+				const auto center = pTechno->GetCoords();
+				const auto pItems = Helpers::Alex::getCellSpreadItems(center, range);
+
+				std::vector<std::pair<TechnoClass*, int>> record;
+				const size_t maxSize = pItems.size();
+				record.reserve(maxSize);
+
+				int current = 1;
+
+				for (const auto& pItem : pItems)
 				{
+					if (pItem->IsDisguisedAs(HouseClass::CurrentPlayer))
+						continue;
+
+					if (pItem->CloakState == CloakState::Cloaked && !pItem->GetCell()->Sensors_InclHouse(HouseClass::CurrentPlayer->ArrayIndex))
+						continue;
+
 					auto coords = pItem->GetCoords();
 
 					if (!MapClass::Instance.IsWithinUsableArea(coords))
@@ -177,34 +316,64 @@ DEFINE_HOOK(0x4AE818, DisplayClass_sub_4AE750_AutoDistribution, 0xA)
 						coords.Z += CellClass::BridgeHeight;
 
 					if (!MapClass::Instance.IsLocationShrouded(coords))
-						 record.emplace_back(pItem, 0);
+						record.emplace_back(pItem, 0);
 				}
-			}
 
-			const auto recordSize = record.size();
-			std::sort(&record[0], &record[recordSize],[&center](const auto& pairA, const auto& pairB)
-			{
-				const auto coordsA = pairA.first->GetCoords();
-				const auto distanceA = Point2D{coordsA.X, coordsA.Y}.DistanceFromSquared(Point2D{center.X, center.Y});
-				const auto coordsB = pairB.first->GetCoords();
-				const auto distanceB = Point2D{coordsB.X, coordsB.Y}.DistanceFromSquared(Point2D{center.X, center.Y});
-				return distanceA < distanceB;
-			});
-
-			for (const auto& pSelect : ObjectClass::CurrentObjects)
-			{
-				size_t canTargetIndex = maxSize;
-				size_t newTargetIndex = maxSize;
-
-				for (size_t i = 0; i < recordSize; ++i)
-				{
-					const auto& [pItem, num] = record[i];
-
-					if (pSelect->MouseOverObject(pItem) == mouseAction
-						&& (targetIsNeutral || !pItem->Owner->IsNeutral())
-						&& (mode2 < 2 || (pItem->WhatAmI() == pTarget->WhatAmI()
-							&& (mode2 < 3 || TechnoTypeExt::GetSelectionGroupID(pItem->GetTechnoType()) == TechnoTypeExt::GetSelectionGroupID(pTarget->GetTechnoType())))))
+				const size_t recordSize = record.size();
+				std::sort(&record[0], &record[recordSize],[&center](const auto& pairA, const auto& pairB)
 					{
+						const auto coordsA = pairA.first->GetCoords();
+						const double distanceA = Point2D{coordsA.X, coordsA.Y}.DistanceFromSquared(Point2D{center.X, center.Y});
+
+						const auto coordsB = pairB.first->GetCoords();
+						const double distanceB = Point2D{coordsB.X, coordsB.Y}.DistanceFromSquared(Point2D{center.X, center.Y});
+
+						return distanceA < distanceB;
+					});
+
+				for (const auto& pSelect : ObjectClass::CurrentObjects)
+				{
+					size_t canTargetIndex = maxSize;
+					size_t newTargetIndex = maxSize;
+
+					for (size_t i = 0; i < recordSize; ++i)
+					{
+						const auto& [pItem, num] = record[i];
+
+						if (pSelect->MouseOverObject(pItem) != action)
+							continue;
+
+						if (!targetIsNeutral && pItem->Owner->IsNeutral())
+							continue;
+
+						if (filterMode)
+						{
+							const auto pItemType = pItem->GetTechnoType();
+
+							if (!pItemType)
+								continue;
+
+							if (TechnoTypeExt::ExtMap.Find(pType)->FakeOf != pItemType
+								&& TechnoTypeExt::ExtMap.Find(pItemType)->FakeOf != pType)
+							{
+								if (filterMode == 1)
+								{
+									if (pItemType->Armor != pType->Armor)
+										continue;
+								}
+								else if (filterMode == 2)
+								{
+									if (pItem->WhatAmI() != pTechno->WhatAmI())
+										continue;
+								}
+								else // filterMode == 3
+								{
+									if (TechnoTypeExt::GetSelectionGroupID(pItemType) != TechnoTypeExt::GetSelectionGroupID(pType))
+										continue;
+								}
+							}
+						}
+
 						canTargetIndex = i;
 
 						if (num < current)
@@ -213,49 +382,61 @@ DEFINE_HOOK(0x4AE818, DisplayClass_sub_4AE750_AutoDistribution, 0xA)
 							break;
 						}
 					}
-				}
 
-				if (newTargetIndex == maxSize && canTargetIndex != maxSize)
-				{
-					++current;
-					newTargetIndex = canTargetIndex;
-				}
+					if (newTargetIndex == maxSize && canTargetIndex != maxSize)
+					{
+						++current;
+						newTargetIndex = canTargetIndex;
+					}
 
-				if (newTargetIndex != maxSize)
-				{
-					auto& [pNewTarget, recordCount] = record[newTargetIndex];
+					if (newTargetIndex != maxSize)
+					{
+						auto& [pNewTarget, recordCount] = record[newTargetIndex];
 
-					++recordCount;
-					pSelect->ObjectClickedAction(mouseAction, pNewTarget, false);
+						DistributionModeHoldDownCommandClass::ClickedTargetAction(pSelect, action, pNewTarget);
+
+						++recordCount;
+						continue;
+					}
+
+					const auto currentAction = pSelect->MouseOverObject(pTechno);
+
+					if (noMove && currentAction == Action::NoMove && (pSelect->AbstractFlags & AbstractFlags::Techno) != AbstractFlags::None)
+						DistributionModeHoldDownCommandClass::AreaGuardAction(static_cast<TechnoClass*>(pSelect));
+					else
+						DistributionModeHoldDownCommandClass::ClickedTargetAction(pSelect, currentAction, pTechno);
 				}
-				else
+			}
+			else
+			{
+				for (const auto& pSelect : ObjectClass::CurrentObjects)
 				{
 					const auto currentAction = pSelect->MouseOverObject(pTarget);
 
-					if (mode2 && currentAction == Action::NoMove && (pSelect->AbstractFlags & AbstractFlags::Techno) != AbstractFlags::None)
-						static_cast<TechnoClass*>(pSelect)->ClickedMission(Mission::Area_Guard, reinterpret_cast<ObjectClass*>(pSelect->GetCellAgain()), nullptr, nullptr);
+					if (noMove && action != Action::NoMove && currentAction == Action::NoMove && (pSelect->AbstractFlags & AbstractFlags::Techno) != AbstractFlags::None)
+						DistributionModeHoldDownCommandClass::AreaGuardAction(static_cast<TechnoClass*>(pSelect));
 					else
-						pSelect->ObjectClickedAction(currentAction, pTarget, false);
+						DistributionModeHoldDownCommandClass::ClickedTargetAction(pSelect, currentAction, pTarget);
 				}
-
-				Unsorted::MoveFeedback = false;
 			}
 		}
-		else // Vanilla
+		else
 		{
+			LEA_STACK(CellStruct* const, pCell, STACK_OFFSET(0x18, 0x8));
+
+			auto invalidCell = CellStruct { -1, -1 };
+			auto pSecondCell = action == Action::Move || action == Action::PatrolWaypoint || action == Action::NoMove ? pCell : &invalidCell;
+
 			for (const auto& pSelect : ObjectClass::CurrentObjects)
 			{
-				const auto currentAction = pSelect->MouseOverObject(pTarget);
+				const auto currentAction = pSelect->MouseOverCell(pCell, false, false);
 
-				if (mode2 && mouseAction != Action::NoMove && currentAction == Action::NoMove && (pSelect->AbstractFlags & AbstractFlags::Techno) != AbstractFlags::None)
-					static_cast<TechnoClass*>(pSelect)->ClickedMission(Mission::Area_Guard, reinterpret_cast<ObjectClass*>(pSelect->GetCellAgain()), nullptr, nullptr);
-				else
-					pSelect->ObjectClickedAction(currentAction, pTarget, false);
-
-				Unsorted::MoveFeedback = false;
+				DistributionModeHoldDownCommandClass::ClickedCellAction(pSelect, currentAction, pCell, pSecondCell);
 			}
 		}
 	}
+
+	Unsorted::MoveFeedback = true;
 
 	return SkipGameCode;
 }
@@ -265,17 +446,24 @@ DEFINE_HOOK(0x6DBE74, TacticalClass_DrawAllRadialIndicators_DrawDistributionRang
 	if (!DistributionModeHoldDownCommandClass::Enabled && SystemTimer::GetTime() - DistributionModeHoldDownCommandClass::ShowTime > 30)
 		return 0;
 
-	const auto mode1 = Phobos::Config::DistributionSpreadMode;
-	const auto mode2 = Phobos::Config::DistributionFilterMode;
+	const auto spreadMode = Phobos::Config::DistributionSpreadMode;
+	const auto filterMode = Phobos::Config::DistributionFilterMode;
 
-	if (mode1 || mode2)
+	if (spreadMode || filterMode)
 	{
 		const auto pCell = MapClass::Instance.GetCellAt(DisplayClass::Instance.CurrentFoundation_CenterCell);
-		const auto color = ((mode2 > 1)
-			? ((mode2 == 3) ? ColorStruct { 255, 0, 0 } : ColorStruct { 200, 200, 0 })
-			: (mode2 == 1) ? ColorStruct { 0, 100, 255 } : ColorStruct { 0, 255, 50 });
-		Game::DrawRadialIndicator(false, true, pCell->GetCoords(), color, static_cast<float>(mode1 ? (2 << mode1) : 0.5), false, true);
+		const auto color = (filterMode > 1)
+			? ((filterMode == 3) ? ColorStruct { 255, 0, 0 } : ColorStruct { 200, 200, 0 })
+			: ((filterMode == 1) ? ColorStruct { 0, 100, 255 } : ColorStruct { 0, 255, 50 });
+		Game::DrawRadialIndicator(false, true, pCell->GetCoords(), color, static_cast<float>(spreadMode ? (2 << spreadMode) : 0.5), false, true);
 	}
 
 	return 0;
 }
+
+/*
+TODO
+- More flexible range adjustment
+- Drag mouse to adjust the range
+- Target highlight within the range
+*/

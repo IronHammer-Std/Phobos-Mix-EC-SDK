@@ -66,7 +66,7 @@ AttachmentClass::~AttachmentClass()
 	// clean up non-owning references
 	if (this->Child)
 	{
-		auto const& pChildExt = TechnoExt::ExtMap.Find(Child);
+		auto const pChildExt = TechnoExt::ExtMap.Find(this->Child);
 		pChildExt->ParentAttachment = nullptr;
 	}
 
@@ -128,48 +128,89 @@ void AttachmentClass::AI()
 		}
 	}
 
-	if (this->Child)
+	if (const auto pChild = this->Child)
 	{
-		if (this->Child->InLimbo && !this->Parent->InLimbo)
+		const auto pParent = this->Parent;
+
+		if (pChild->InLimbo && !pParent->InLimbo)
 			this->Unlimbo();
-		else if (!this->Child->InLimbo && this->Parent->InLimbo)
+		else if (!pChild->InLimbo && pParent->InLimbo)
 			this->Limbo();
 
-		this->Child->SetLocation(this->GetChildLocation());
-		this->Child->PrimaryFacing.SetCurrent(this->GetChildDirection());
+		pChild->SetLocation(this->GetChildLocation());
+		pChild->PrimaryFacing.SetCurrent(this->GetChildDirection());
 		// TODO handle secondary facing in case the turret is idle
 
-		FootClass* pParentAsFoot = abstract_cast<FootClass*, true>(this->Parent);
-		FootClass* pChildAsFoot = abstract_cast<FootClass*, true>(this->Child);
+		FootClass* pParentAsFoot = abstract_cast<FootClass*, true>(pParent);
+		FootClass* pChildAsFoot = abstract_cast<FootClass*, true>(pChild);
 
 		if (pParentAsFoot && pChildAsFoot)
 			pChildAsFoot->TubeIndex = pParentAsFoot->TubeIndex;
 
+		if (pType->InheritTarget)
+		{
+			auto childInheritTarget = [pParent, pChild, pType]()
+				{
+					const auto pTarget = pParent->Target;
+
+					if (pType->InheritTarget_Force)
+					{
+						if (pChild->Target != pTarget)
+						{
+							pChild->SetTarget(pTarget);
+							pChild->QueueMission((pTarget ? Mission::Attack : Mission::Guard), true);
+						}
+
+						return;
+					}
+
+					if (pChild->GetCurrentMission() != Mission::Guard)
+						pChild->QueueMission(Mission::Guard, true);
+
+					const auto pChildTarget = pChild->Target;
+
+					if (pTarget && pChildTarget != pTarget && pChild->IsCloseEnoughToAttack(pTarget))
+					{
+						const auto fireError = pChild->GetFireErrorWithoutRange(pTarget, pChild->SelectWeapon(pTarget));
+
+						if (fireError != FireError::CANT && fireError != FireError::ILLEGAL)
+						{
+							pChild->SetTarget(pTarget);
+							return;
+						}
+					}
+
+					if (pChildTarget && !pChild->IsCloseEnoughToAttack(pChildTarget))
+						pChild->SetTarget(nullptr);
+				};
+			childInheritTarget();
+		}
+
 		if (pType->InheritStateEffects)
 		{
-			this->Child->IsFallingDown = this->Parent->IsFallingDown;
-			this->Child->WasFallingDown = this->Parent->WasFallingDown;
-			this->Child->CloakState = this->Parent->CloakState;
-			this->Child->WarpingOut = this->Parent->WarpingOut;
-			this->Child->unknown_280 = this->Parent->unknown_280; // sth related to teleport
-			this->Child->BeingWarpedOut = this->Parent->BeingWarpedOut;
-			this->Child->Deactivated = this->Parent->Deactivated;
-			this->Child->Flash(this->Parent->Flashing.DurationRemaining);
+			pChild->IsFallingDown = pParent->IsFallingDown;
+			pChild->WasFallingDown = pParent->WasFallingDown;
+			pChild->CloakState = pParent->CloakState;
+			pChild->WarpingOut = pParent->WarpingOut;
+			pChild->unknown_280 = pParent->unknown_280; // sth related to teleport
+			pChild->BeingWarpedOut = pParent->BeingWarpedOut;
+			pChild->Deactivated = pParent->Deactivated;
+			pChild->Flash(pParent->Flashing.DurationRemaining);
 
-			this->Child->IronCurtainTimer = this->Parent->IronCurtainTimer;
-			this->Child->IdleActionTimer = this->Parent->IdleActionTimer;
-			this->Child->IronTintTimer = this->Parent->IronTintTimer;
-			this->Child->CloakDelayTimer = this->Parent->CloakDelayTimer;
-			this->Child->ChronoLockRemaining = this->Parent->ChronoLockRemaining;
-			this->Child->Berzerk = this->Parent->Berzerk;
-			this->Child->BerzerkDurationLeft = this->Parent->BerzerkDurationLeft;
-			this->Child->ChronoWarpedByHouse = this->Parent->ChronoWarpedByHouse;
-			this->Child->EMPLockRemaining = this->Parent->EMPLockRemaining;
-			this->Child->ShouldLoseTargetNow = this->Parent->ShouldLoseTargetNow;
+			pChild->IronCurtainTimer = pParent->IronCurtainTimer;
+			pChild->IdleActionTimer = pParent->IdleActionTimer;
+			pChild->IronTintTimer = pParent->IronTintTimer;
+			pChild->CloakDelayTimer = pParent->CloakDelayTimer;
+			pChild->ChronoLockRemaining = pParent->ChronoLockRemaining;
+			pChild->Berzerk = pParent->Berzerk;
+			pChild->BerzerkDurationLeft = pParent->BerzerkDurationLeft;
+			pChild->ChronoWarpedByHouse = pParent->ChronoWarpedByHouse;
+			pChild->EMPLockRemaining = pParent->EMPLockRemaining;
+			pChild->ShouldLoseTargetNow = pParent->ShouldLoseTargetNow;
 		}
 
 		if (pType->InheritOwner)
-			this->Child->SetOwningHouse(this->Parent->GetOwningHouse(), false);
+			pChild->SetOwningHouse(pParent->GetOwningHouse(), false);
 	}
 }
 
@@ -190,6 +231,21 @@ void AttachmentClass::Destroy(TechnoClass* pSource)
 			TechnoExt::Kill(this->Child, pSource);
 		else if (!this->Child->InLimbo && pType->ParentDestructionMission != Mission::None)
 			this->Child->QueueMission(pType->ParentDestructionMission, false);
+
+		this->Child = nullptr;
+	}
+}
+
+void AttachmentClass::UnInit()
+{
+	if (const auto pChild = this->Child)
+	{
+		auto const pChildExt = TechnoExt::ExtMap.Find(pChild);
+		pChildExt->ParentAttachment = nullptr;
+
+		pChild->KillPassengers(nullptr);
+		pChild->Limbo();
+		pChild->UnInit();
 
 		this->Child = nullptr;
 	}
@@ -248,19 +304,19 @@ bool AttachmentClass::AttachChild(TechnoClass* pChild)
 
 	this->Child = pChild;
 
-	auto pChildExt = TechnoExt::ExtMap.Find(this->Child);
+	auto pChildExt = TechnoExt::ExtMap.Find(pChild);
 	pChildExt->ParentAttachment = this;
 
 	// bandaid for jitterless drawing. TODO fix properly
-	// this->Child->GetTechnoType()->DisableVoxelCache = true;
-	// this->Child->GetTechnoType()->DisableShadowCache = true;
+	// pChild->GetTechnoType()->DisableVoxelCache = true;
+	// pChild->GetTechnoType()->DisableShadowCache = true;
 
 	AttachmentTypeClass* pType = this->GetType();
 
 	if (pType->InheritOwner)
 	{
-		if (auto pController = this->Child->MindControlledBy)
-			pController->CaptureManager->FreeUnit(this->Child);
+		if (auto pController = pChild->MindControlledBy)
+			pController->CaptureManager->FreeUnit(pChild);
 	}
 
 	return true;

@@ -25,6 +25,11 @@ const wchar_t* AggressiveStanceClass::GetUIDescription() const
 
 void AggressiveStanceClass::Execute(WWKey eInput) const
 {
+	AggressiveStanceClass::AggressiveExecute();
+}
+
+void AggressiveStanceClass::AggressiveExecute()
+{
 	std::vector<TechnoClass*> TechnoVectorAggressive;
 	std::vector<TechnoClass*> TechnoVectorNonAggressive;
 
@@ -35,26 +40,25 @@ void AggressiveStanceClass::Execute(WWKey eInput) const
 	bool isAllSelectedUnitAggressiveStance = true;
 
 	auto processATechno = [&](TechnoClass* pTechno)
-		{
-			const auto pTechnoExt = TechnoExt::ExtMap.Find(pTechno);
+	{
+		const auto pTechnoExt = TechnoExt::ExtMap.Find(pTechno);
 
-			// If not togglable then exclude it from the iteration.
-			if (!pTechnoExt->CanToggleAggressiveStance())
-				return;
-
-			isAnySelectedUnitTogglable = true;
-
-			if (pTechnoExt->GetAggressiveStance())
-			{
-				TechnoVectorAggressive.push_back(pTechno);
-			}
-			else
-			{
-				isAllSelectedUnitAggressiveStance = false;
-				TechnoVectorNonAggressive.push_back(pTechno);
-			}
+		// If not togglable then exclude it from the iteration.
+		if (!pTechnoExt->CanToggleAggressiveStance())
 			return;
-		};
+
+		isAnySelectedUnitTogglable = true;
+
+		if (pTechnoExt->GetAggressiveStance())
+		{
+			TechnoVectorAggressive.push_back(pTechno);
+		}
+		else
+		{
+			isAllSelectedUnitAggressiveStance = false;
+			TechnoVectorNonAggressive.push_back(pTechno);
+		}
+	};
 
 	for (const auto& pUnit : ObjectClass::CurrentObjects)
 	{

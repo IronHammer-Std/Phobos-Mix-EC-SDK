@@ -2,6 +2,7 @@
 #include <Ext/Anim/Body.h>
 #include <Ext/Techno/Body.h>
 #include <Ext/BulletType/Body.h>
+#include <Ext/Scenario/Body.h>
 #include <Ext/WeaponType/Body.h>
 #include <Utilities/EnumFunctions.h>
 #include <Utilities/Macro.h>
@@ -13,20 +14,34 @@ DEFINE_HOOK(0x466556, BulletClass_Init, 0x6)
 {
 	GET(BulletClass*, pThis, ECX);
 
-	if (auto const pExt = BulletExt::ExtMap.Find(pThis))
+	if (auto const pExt = BulletExt::ExtMap.TryFind(pThis))
 	{
+		auto const pType = pThis->Type;
 		pExt->FirerHouse = pThis->Owner ? pThis->Owner->Owner : nullptr;
-		pExt->CurrentStrength = pThis->Type->Strength;
-		pExt->TypeExtData = BulletTypeExt::ExtMap.Find(pThis->Type);
+		pExt->CurrentStrength = pType->Strength;
+		pExt->TypeExtData = BulletTypeExt::ExtMap.Find(pType);
 
-		if (!pThis->Type->Inviso)
+		if (!pType->Inviso)
 			pExt->InitializeLaserTrails();
 	}
 
 	if (RulesExt::Global()->VHPScan_Enhanced)
 	{
-		if (auto pTargetExt = TechnoExt::ExtMap.Find(abstract_cast<TechnoClass*>(pThis->Target)))
-			pTargetExt->BulletsTargetingMe.AddItem(pThis);
+		if (const auto pTarget = abstract_cast<TechnoClass*>(pThis->Target))
+			TechnoExt::ExtMap.Find(pTarget)->BulletsTargetingMeCount++;
+	}
+
+	return 0;
+}
+
+DEFINE_HOOK(0x468430, BulletClass_ClearTarget_Start, 0x6)
+{
+	GET(BulletClass*, pThis, ECX);
+
+	if (RulesExt::Global()->VHPScan_Enhanced)
+	{
+		if (const auto pTarget = abstract_cast<TechnoClass*>(pThis->Target))
+			TechnoExt::ExtMap.Find(pTarget)->BulletsTargetingMeCount--;
 	}
 
 	return 0;
@@ -46,11 +61,26 @@ DEFINE_HOOK(0x4666F7, BulletClass_AI, 0x6)
 	GET(BulletClass*, pThis, EBP);
 
 	const auto pBulletExt = BulletExt::ExtMap.Find(pThis);
+	const auto pBulletTypeExt = pBulletExt->TypeExtData;
 	BulletAITemp::ExtData = pBulletExt;
-	BulletAITemp::TypeExtData = pBulletExt->TypeExtData;
+	BulletAITemp::TypeExtData = pBulletTypeExt;
 
-	if (pBulletExt->InterceptedStatus == InterceptedStatus::Intercepted)
+	if (pBulletExt->InterceptedStatus & InterceptedStatus::Targeted)
 	{
+		if (const auto pTarget = abstract_cast<BulletClass*>(pThis->Target))
+		{
+			const auto pTargetExt = BulletExt::ExtMap.Find(pTarget);
+
+			if (!pTargetExt->TypeExtData->Armor.isset())
+				pTargetExt->InterceptedStatus |= InterceptedStatus::Locked;
+		}
+	}
+
+	if (pBulletExt->InterceptedStatus & InterceptedStatus::Intercepted)
+	{
+		if (const auto pTarget = abstract_cast<BulletClass*>(pThis->Target))
+			BulletExt::ExtMap.Find(pTarget)->InterceptedStatus &= ~InterceptedStatus::Locked;
+
 		if (pBulletExt->DetonateOnInterception)
 			pThis->Detonate(pThis->GetCoords());
 
@@ -58,8 +88,12 @@ DEFINE_HOOK(0x4666F7, BulletClass_AI, 0x6)
 		pThis->UnInit();
 
 		const auto pTechno = pThis->Owner;
+		const auto pWeapon = pThis->WeaponType;
 
-		if (pTechno && pTechno->InLimbo && pThis->WeaponType && pThis->WeaponType->LimboLaunch)
+		if (pTechno
+			&& pTechno->InLimbo
+			&& pWeapon
+			&& pWeapon->LimboLaunch)
 		{
 			pThis->SetTarget(nullptr);
 			auto damage = pTechno->Health * 2;
@@ -68,37 +102,55 @@ DEFINE_HOOK(0x4666F7, BulletClass_AI, 0x6)
 		}
 	}
 
-	//Because the laser trails will be drawn before the calculation of changing the velocity direction in each frame.
-	//This will cause the laser trails to be drawn in the wrong position too early, resulting in a visual appearance resembling a "bouncing".
-	//Let trajectories draw their own laser trails after the Trajectory's OnEarlyUpdate() to avoid predicting incorrect positions or pass through targets.
+	// Because the laser trails will be drawn before the calculation of changing the velocity direction in each frame.
+	// This will cause the laser trails to be drawn in the wrong position too early, resulting in a visual appearance resembling a "bouncing".
+	// Let trajectories draw their own laser trails after the Trajectory's OnEarlyUpdate() to avoid predicting incorrect positions or pass through targets.
 	if (const auto pTraj = pBulletExt->Trajectory.get())
 	{
 		if (pTraj->OnEarlyUpdate() && !pThis->SpawnNextAnim)
 			return Detonate;
 	}
-	else if (pBulletExt->LaserTrails.size())
+	else
 	{
-		const CoordStruct location = pThis->GetCoords();
-		const BulletVelocity& velocity = pThis->Velocity;
+		if (pBulletExt->CheckOnEarlyUpdate() && !pThis->SpawnNextAnim)
+			return Detonate;
 
-		// We adjust LaserTrails to account for vanilla bug of drawing stuff one frame ahead.
-		// Pretty meh solution but works until we fix the bug - Kerbiter
-		CoordStruct drawnCoords
+		if (pBulletExt->LaserTrails.size())
 		{
-			(int)(location.X + velocity.X),
-			(int)(location.Y + velocity.Y),
-			(int)(location.Z + velocity.Z)
-		};
+			const CoordStruct location = pThis->GetCoords();
+			const BulletVelocity& velocity = pThis->Velocity;
 
-		for (const auto& pTrail : pBulletExt->LaserTrails)
-		{
-			// We insert initial position so the first frame of trail doesn't get skipped - Kerbiter
-			// TODO move hack to BulletClass creation
-			if (!pTrail->LastLocation.isset())
-				pTrail->LastLocation = location;
+			// We adjust LaserTrails to account for vanilla bug of drawing stuff one frame ahead.
+			// Pretty meh solution but works until we fix the bug - Kerbiter
+			const CoordStruct drawnCoords
+			{
+				(int)(location.X + velocity.X),
+				(int)(location.Y + velocity.Y),
+				(int)(location.Z + velocity.Z)
+			};
 
-			pTrail->Update(drawnCoords);
+			for (const auto& pTrail : pBulletExt->LaserTrails)
+			{
+				// We insert initial position so the first frame of trail doesn't get skipped - Kerbiter
+				// TODO move hack to BulletClass creation
+				if (!pTrail->LastLocation.isset())
+					pTrail->LastLocation = location;
+
+				pTrail->Update(drawnCoords);
+			}
 		}
+	}
+
+	if (pThis->HasParachute)
+	{
+		int fallRate = pBulletExt->ParabombFallRate - pBulletTypeExt->Parachuted_FallRate;
+		const int maxFallRate = pBulletTypeExt->Parachuted_MaxFallRate.Get(RulesClass::Instance->ParachuteMaxFallRate);
+
+		if (fallRate < maxFallRate)
+			fallRate = maxFallRate;
+
+		pBulletExt->ParabombFallRate = fallRate;
+		pThis->FallRate = fallRate;
 	}
 
 	return 0;
@@ -132,7 +184,7 @@ DEFINE_HOOK(0x4668BD, BulletClass_AI_Interceptor_InvisoSkip, 0x6)
 
 	if (auto const pExt = BulletAITemp::ExtData)
 	{
-		if (pThis->Type->Inviso && pExt->IsInterceptor)
+		if (pThis->Type->Inviso && pExt->InterceptorTechnoType)
 			return DetonateBullet;
 	}
 
@@ -258,17 +310,11 @@ DEFINE_HOOK(0x46A4FB, BulletClass_Shrapnel_Targeting, 0x6)
 		{
 			if (!pWeaponExt->SkipWeaponPicking)
 			{
-				if (!EnumFunctions::CanTargetHouse(pWeaponExt->CanTargetHouses, pOwner, pTechno->Owner))
+				if (!EnumFunctions::CanTargetHouse(pWeaponExt->CanTargetHouses, pOwner, pTechno->Owner) || !EnumFunctions::IsTechnoEligible(pTechno, pWeaponExt->CanTarget)
+					|| !pWeaponExt->IsHealthInThreshold(pTechno) || !pWeaponExt->HasRequiredAttachedEffects(pTechno, pSource))
+				{
 					return SkipObject;
-
-				if (!EnumFunctions::IsTechnoEligible(pTechno, pWeaponExt->CanTarget))
-					return SkipObject;
-
-				if (!pWeaponExt->IsHealthRatioEligible(pTechno))
-					return SkipObject;
-
-				if (!pWeaponExt->HasRequiredAttachedEffects(pTechno, pSource))
-					return SkipObject;
+				}
 			}
 
 			auto const pShield = TechnoExt::ExtMap.Find(pTechno)->Shield.get();
@@ -299,6 +345,7 @@ DEFINE_HOOK(0x46902C, BulletClass_Explode_Cluster, 0x6)
 	const int min = pTypeExt->ClusterScatter_Min.Get();
 	const int max = pTypeExt->ClusterScatter_Max.Get();
 	auto coords = origCoords;
+	auto& random = ScenarioClass::Instance->Random;
 
 	for (int i = 0; i < pThis->Type->Cluster; i++)
 	{
@@ -307,7 +354,7 @@ DEFINE_HOOK(0x46902C, BulletClass_Explode_Cluster, 0x6)
 		if (!pThis->IsAlive)
 			break;
 
-		int distance = ScenarioClass::Instance->Random.RandomRanged(min, max);
+		const int distance = random.RandomRanged(min, max);
 		coords = MapClass::GetRandomCoordsNear(origCoords, distance, false);
 	}
 
@@ -331,17 +378,19 @@ DEFINE_HOOK(0x467CCA, BulletClass_AI_TargetSnapChecks, 0x6)
 
 	GET(BulletClass*, pThis, EBP);
 
+	auto const pType = pThis->Type;
+
 	// Do not require Airburst=no to check target snapping for Inviso / Trajectory=Straight projectiles
-	if (pThis->Type->Inviso)
+	if (pType->Inviso)
 	{
-		R->EAX(pThis->Type);
+		R->EAX(pType);
 		return SkipChecks;
 	}
 	else if (auto const pExt = BulletAITemp::ExtData)
 	{
 		if (pExt->Trajectory && CheckTrajectoryCanNotAlwaysSnap(pExt->Trajectory->Flag()))
 		{
-			R->EAX(pThis->Type);
+			R->EAX(pType);
 			return SkipChecks;
 		}
 	}
@@ -351,27 +400,32 @@ DEFINE_HOOK(0x467CCA, BulletClass_AI_TargetSnapChecks, 0x6)
 
 DEFINE_HOOK(0x468E61, BulletClass_Explode_TargetSnapChecks1, 0x6)
 {
-	enum { SkipChecks = 0x468E7B };
+	enum { Snap = 0x468E7B, SkipChecks = 0x468FF4 };
 
 	GET(BulletClass*, pThis, ESI);
 
-	// Do not require Airburst=no to check target snapping for Inviso / Trajectory=Straight projectiles
-	if (pThis->Type->Inviso)
-	{
-		R->EAX(pThis->Type);
+	auto const pExt = BulletExt::ExtMap.Find(pThis);
+
+	if (pExt->IsInstantDetonation)
 		return SkipChecks;
+
+	auto const pType = pThis->Type;
+
+	// Do not require Airburst=no to check target snapping for Inviso / Trajectory=Straight projectiles
+	if (pType->Inviso)
+	{
+		R->EAX(pType);
+		return Snap;
 	}
-	else if (pThis->Type->Arcing || pThis->Type->ROT > 0)
+	else if (pType->Arcing || pType->ROT > 0)
 	{
 		return 0;
 	}
 
-	auto const pExt = BulletExt::ExtMap.Find(pThis);
-
 	if (pExt->Trajectory && CheckTrajectoryCanNotAlwaysSnap(pExt->Trajectory->Flag()) && !pExt->SnappedToTarget)
 	{
-		R->EAX(pThis->Type);
-		return SkipChecks;
+		R->EAX(pType);
+		return Snap;
 	}
 
 	return 0;
@@ -379,25 +433,30 @@ DEFINE_HOOK(0x468E61, BulletClass_Explode_TargetSnapChecks1, 0x6)
 
 DEFINE_HOOK(0x468E9F, BulletClass_Explode_TargetSnapChecks2, 0x6)
 {
-	enum { SkipInitialChecks = 0x468EC7, SkipSetCoordinate = 0x468F23 };
+	enum { SkipInitialChecksOnly = 0x468EC7, SkipSetCoordinate = 0x468F23, SkipChecks = 0x468FF4 };
 
 	GET(BulletClass*, pThis, ESI);
 
+	auto const pExt = BulletExt::ExtMap.Find(pThis);
+
+	if (pExt->IsInstantDetonation)
+		return SkipChecks;
+
+	auto const pType = pThis->Type;
+
 	// Do not require EMEffect=no & Airburst=no to check target coordinate snapping for Inviso projectiles.
-	if (pThis->Type->Inviso)
+	if (pType->Inviso)
 	{
-		R->EAX(pThis->Type);
-		return SkipInitialChecks;
+		R->EAX(pType);
+		return SkipInitialChecksOnly;
 	}
-	else if (pThis->Type->Arcing || pThis->Type->ROT > 0)
+	else if (pType->Arcing || pType->ROT > 0)
 	{
 		return 0;
 	}
 
 	// Do not force Trajectory=Straight projectiles to detonate at target coordinates under certain circumstances.
 	// Fixes issues with walls etc.
-	auto const pExt = BulletExt::ExtMap.Find(pThis);
-
 	if (pExt->Trajectory && CheckTrajectoryCanNotAlwaysSnap(pExt->Trajectory->Flag()) && !pExt->SnappedToTarget)
 		return SkipSetCoordinate;
 
@@ -421,7 +480,7 @@ DEFINE_HOOK(0x468D3F, BulletClass_ShouldExplode_AirTarget, 0x6)
 DEFINE_HOOK(0x4687F8, BulletClass_Unlimbo_FlakScatter, 0x6)
 {
 	GET(BulletClass*, pThis, EBX);
-	GET_STACK(float, mult, STACK_OFFSET(0x5C, -0x44));
+	GET_STACK(const float, mult, STACK_OFFSET(0x5C, -0x44));
 
 	if (pThis->WeaponType)
 	{
@@ -436,7 +495,7 @@ DEFINE_HOOK(0x4687F8, BulletClass_Unlimbo_FlakScatter, 0x6)
 		const int defaultValue = RulesClass::Instance->BallisticScatter;
 		int min = pTypeExt->BallisticScatter_Min.Get(Leptons(0));
 		int max = pTypeExt->BallisticScatter_Max.Get(Leptons(defaultValue));
-		int result;
+		int result = 0;
 
 		if (pTypeExt->BallisticScatter_IncreaseByRange)
 		{
@@ -506,27 +565,57 @@ DEFINE_HOOK(0x44D46E, BuildingClass_Mission_Missile_BeforeMoveTo, 0x8)
 	return 0;
 }
 
-// Vanilla inertia effect only for bullets with ROT=0
-DEFINE_HOOK(0x415F25, AircraftClass_Fire_TrajectorySkipInertiaEffect, 0x6)
+#pragma region Parabombs
+
+// Patch out Ares parabomb implementation.
+DEFINE_PATCH(0x46867F, 0x6A, 0x00, 0x8B, 0xD9, 0x50);
+
+// Add in our own.
+bool __fastcall ObjectClass_Unlimbo_Parachuted_Wrapper(BulletClass* pThis, void*, const CoordStruct& coords, DirType facing)
 {
-	enum { SkipCheck = 0x4160BC };
+	auto const pTypeExt = BulletTypeExt::ExtMap.Find(pThis->Type);
 
-	GET(BulletClass*, pThis, ESI);
+	if (pTypeExt->Parachuted)
+		return pThis->SpawnParachuted(coords);
 
-	if (BulletExt::ExtMap.Find(pThis)->Trajectory)
-		return SkipCheck;
-
-	return 0;
+	return pThis->Unlimbo(coords, facing);
 }
 
-#pragma region BombParachute
+DEFINE_FUNCTION_JUMP(CALL, 0x468684, ObjectClass_Unlimbo_Parachuted_Wrapper);
 
-DEFINE_HOOK(0x5F5A8C, ObjectClass_SpawnParachuted_BombParachute, 0x5)
+// Set parachute animation on projectile.
+DEFINE_HOOK(0x5F5A62, ObjectClass_SpawnParachuted_BombParachute, 0x5)
 {
-	GET(BulletClass*, pThis, ESI);
+	enum { SkipGameCode = 0x5F5A99 };
 
-	if (const auto pAnimType = BulletTypeExt::ExtMap.Find(pThis->Type)->BombParachute.Get())
-		R->EDX(pAnimType);
+	GET(BulletClass*, pThis, ESI);
+	GET(CoordStruct*, coords, EDI);
+
+	auto const pTypeExt = BulletTypeExt::ExtMap.Find(pThis->Type);
+	auto const pAnimType = pTypeExt->BombParachute.Get(RulesClass::Instance->BombParachute);
+	AnimClass* pAnim = nullptr;
+
+	if (pAnimType)
+	{
+		pAnim = GameCreate<AnimClass>(pAnimType, *coords);
+		pAnim->Owner = pThis->Owner ? pThis->Owner->Owner : BulletExt::ExtMap.Find(pThis)->FirerHouse;
+		const int schemeIndex = pAnim->Owner ? pAnim->Owner->ColorSchemeIndex : RulesExt::Global()->AnimRemapDefaultColorScheme;
+		pAnim->LightConvert = ColorScheme::Array[schemeIndex]->LightConvert;
+		pThis->Parachute = pAnim;
+	}
+
+	R->EAX(pAnim);
+	return SkipGameCode;
+}
+
+DEFINE_HOOK(0x467AB2, BulletClass_AI_Parabomb, 0x7)
+{
+	enum { SkipGameCode = 0x467B1A };
+
+	GET(BulletClass*, pThis, EBP);
+
+	if (pThis->HasParachute)
+		return SkipGameCode;
 
 	return 0;
 }

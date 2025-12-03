@@ -36,6 +36,7 @@ public:
 		Nullable<int> Strafing_Shots;
 		Valueable<bool> Strafing_SimulateBurst;
 		Valueable<bool> Strafing_UseAmmoPerShot;
+		Valueable<bool> Strafing_TargetCell;
 		Nullable<int> Strafing_EndDelay;
 		Valueable<AffectedTarget> CanTarget;
 		Valueable<AffectedHouse> CanTargetHouses;
@@ -43,6 +44,7 @@ public:
 		Valueable<double> CanTarget_MinHealth;
 		ValueableVector<int> Burst_Delays;
 		Valueable<bool> Burst_FireWithinSequence;
+		Valueable<bool> Burst_NoDelay;
 		Valueable<AreaFireTarget> AreaFire_Target;
 		Valueable<WeaponTypeClass*> FeedbackWeapon;
 		Valueable<bool> Laser_IsSingleColor;
@@ -73,22 +75,30 @@ public:
 		Valueable<Leptons> KeepRange;
 		Valueable<bool> KeepRange_AllowAI;
 		Valueable<bool> KeepRange_AllowPlayer;
+		Valueable<int> KeepRange_EarlyStopFrame;
 		Nullable<bool> CylinderRangefinding;
 		Nullable<bool> AttackIronCurtain;
-		Valueable<bool> Burst_NoDelay;
-		Valueable<bool> UnlimboDetonate;
-		Valueable<bool> UnlimboDetonate_Force;
 		Valueable<bool> ResetGattlingValue;
 		Valueable<bool> AddtionalDamage_GattlingValue;
 		Valueable<double> AddtionalDamage_GattlingValue_Mult;
 		Valueable<bool> KickOutPassengers;
-
 		Nullable<ColorStruct> Beam_Color;
 		Valueable<int> Beam_Duration;
 		Valueable<double> Beam_Amplitude;
 		Valueable<bool> Beam_IsHouseColor;
 		Valueable<int> LaserThickness;
 		Valueable<bool> Laser_IsTracking;
+		Nullable<PartialVector2D<int>> DelayedFire_Duration;
+		Valueable<bool> DelayedFire_SkipInTransport;
+		Valueable<AnimTypeClass*> DelayedFire_Animation;
+		Nullable<AnimTypeClass*> DelayedFire_OpenToppedAnimation;
+		Valueable<bool> DelayedFire_AnimIsAttached;
+		Valueable<bool> DelayedFire_CenterAnimOnFirer;
+		Valueable<bool> DelayedFire_RemoveAnimOnNoDelay;
+		Valueable<bool> DelayedFire_PauseFiringSequence;
+		Valueable<bool> DelayedFire_OnlyOnInitialBurst;
+		Nullable<CoordStruct> DelayedFire_AnimOffset;
+		Valueable<bool> DelayedFire_AnimOnTurret;
 
 		bool SkipWeaponPicking;
 
@@ -106,6 +116,7 @@ public:
 			, Strafing_Shots {}
 			, Strafing_SimulateBurst { false }
 			, Strafing_UseAmmoPerShot { false }
+			, Strafing_TargetCell { false }
 			, Strafing_EndDelay {}
 			, CanTarget { AffectedTarget::All }
 			, CanTargetHouses { AffectedHouse::All }
@@ -113,6 +124,7 @@ public:
 			, CanTarget_MinHealth { 0.0 }
 			, Burst_Delays {}
 			, Burst_FireWithinSequence { false }
+			, Burst_NoDelay { false }
 			, AreaFire_Target { AreaFireTarget::Base }
 			, FeedbackWeapon {}
 			, Laser_IsSingleColor { false }
@@ -143,11 +155,9 @@ public:
 			, KeepRange { Leptons(0) }
 			, KeepRange_AllowAI { false }
 			, KeepRange_AllowPlayer { false }
+			, KeepRange_EarlyStopFrame { 0 }
 			, CylinderRangefinding {}
 			, AttackIronCurtain {}
-			, Burst_NoDelay { false }
-			, UnlimboDetonate { false }
-			, UnlimboDetonate_Force { false }
 			, ResetGattlingValue { false }
 			, AddtionalDamage_GattlingValue { false }
 			, AddtionalDamage_GattlingValue_Mult { 1.0 }
@@ -159,23 +169,29 @@ public:
 			, LaserThickness { 3 }
 			, Laser_IsTracking { false }
 			, SkipWeaponPicking { true }
+			, DelayedFire_Duration {}
+			, DelayedFire_SkipInTransport { false }
+			, DelayedFire_Animation {}
+			, DelayedFire_OpenToppedAnimation {}
+			, DelayedFire_AnimIsAttached { true }
+			, DelayedFire_CenterAnimOnFirer { false }
+			, DelayedFire_RemoveAnimOnNoDelay { false }
+			, DelayedFire_PauseFiringSequence { false }
+			, DelayedFire_OnlyOnInitialBurst { false }
+			, DelayedFire_AnimOffset {}
+			, DelayedFire_AnimOnTurret { true }
 		{ }
 
 		int GetBurstDelay(int burstIndex) const;
-
 		bool HasRequiredAttachedEffects(TechnoClass* pTechno, TechnoClass* pFirer) const;
-
-		bool IsHealthRatioEligible(TechnoClass* const pTarget) const;
+		bool IsHealthInThreshold(TechnoClass* pTarget) const;
 
 		virtual ~ExtData() = default;
 
 		virtual void LoadFromINIFile(CCINIClass* pINI) override;
 		virtual void Initialize() override;
-
 		virtual void InvalidatePointer(void* ptr, bool bRemoved) override { }
-
 		virtual void LoadFromStream(PhobosStreamReader& Stm) override;
-
 		virtual void SaveToStream(PhobosStreamWriter& Stm) override;
 
 	private:

@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "PhobosActualTrajectory.h"
+#include "../PhobosActualTrajectory.h"
 
 #include <Ext/WeaponType/Body.h>
 
@@ -53,11 +53,14 @@ private:
 class MissileTrajectory final : public ActualTrajectory
 {
 public:
+	static constexpr double UniqueCurveSpeed = 192.0;
+	static constexpr double UniqueCurveAcceleration = 4.0;
+
 	MissileTrajectory(noinit_t) { }
-	MissileTrajectory(MissileTrajectoryType const* trajType, BulletClass* pBullet)
-		: ActualTrajectory(trajType, pBullet)
-		, Type { trajType }
-		, CruiseEnable { trajType->CruiseEnable }
+	MissileTrajectory(MissileTrajectoryType const* pTrajType, BulletClass* pBullet)
+		: ActualTrajectory(pTrajType, pBullet)
+		, Type { pTrajType }
+		, CruiseEnable { pTrajType->CruiseEnable && !pTrajType->UniqueCurve }
 		, InStraight { false }
 		, Accelerate { true }
 		, OriginalDistance { 0 }
@@ -96,6 +99,7 @@ private:
 	bool NotCurveVelocityChange();
 	bool StandardVelocityChange();
 	bool ChangeBulletVelocity(const CoordStruct& targetLocation);
+	int GetCruiseAltitude();
 
 	template <typename T>
 	void Serialize(T& Stm);

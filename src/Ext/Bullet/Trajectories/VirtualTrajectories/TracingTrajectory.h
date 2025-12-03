@@ -1,15 +1,15 @@
 ﻿#pragma once
 
-#include "PhobosVirtualTrajectory.h"
+#include "../PhobosVirtualTrajectory.h"
 
-enum class TraceTargetMode : int
+enum class TraceTargetMode : unsigned char
 {
 	Connection = 0,
 	Global = 1,
 	Body = 2,
 	Turret = 3,
 	RotateCW = 4,
-	RotateCCW = 5,
+	RotateCCW = 5
 };
 
 class TracingTrajectoryType final : public VirtualTrajectoryType
@@ -17,14 +17,14 @@ class TracingTrajectoryType final : public VirtualTrajectoryType
 public:
 	TracingTrajectoryType() : VirtualTrajectoryType()
 		, TraceMode { TraceTargetMode::Connection }
-		, TraceTheTarget { true }
+		, TrackTarget { true }
 		, CreateAtTarget { false }
 		, StableRotation { false }
 		, ChasableDistance { Leptons(0) }
 	{ }
 
 	Valueable<TraceTargetMode> TraceMode;
-	Valueable<bool> TraceTheTarget;
+	Valueable<bool> TrackTarget;
 	Valueable<bool> CreateAtTarget;
 	Valueable<bool> StableRotation;
 	Valueable<Leptons> ChasableDistance;
@@ -44,9 +44,9 @@ class TracingTrajectory final : public VirtualTrajectory
 {
 public:
 	TracingTrajectory(noinit_t) { }
-	TracingTrajectory(TracingTrajectoryType const* trajType, BulletClass* pBullet)
-		: VirtualTrajectory(trajType, pBullet)
-		, Type { trajType }
+	TracingTrajectory(TracingTrajectoryType const* pTrajType, BulletClass* pBullet)
+		: VirtualTrajectory(pTrajType, pBullet)
+		, Type { pTrajType }
 		, RotateRadian { 0.0 }
 	{ }
 
@@ -56,7 +56,6 @@ public:
 	virtual bool Load(PhobosStreamReader& Stm, bool RegisterForChange) override;
 	virtual bool Save(PhobosStreamWriter& Stm) const override;
 	virtual TrajectoryFlag Flag() const override { return TrajectoryFlag::Tracing; }
-	virtual void OnUnlimbo() override;
 	virtual bool OnEarlyUpdate() override;
 	virtual bool OnVelocityCheck() override;
 	virtual const PhobosTrajectoryType* GetType() const override { return this->Type; }

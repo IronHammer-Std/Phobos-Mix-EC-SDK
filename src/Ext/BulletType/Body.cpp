@@ -35,8 +35,66 @@ void BulletTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 	this->Interceptable_DeleteOnIntercept.Read(exINI, pSection, "Interceptable.DeleteOnIntercept");
 	this->Interceptable_WeaponOverride.Read<true>(exINI, pSection, "Interceptable.WeaponOverride");
 	this->Gravity.Read(exINI, pSection, "Gravity");
+	this->Vertical_AircraftFix.Read(exINI, pSection, "Vertical.AircraftFix");
+	this->VerticalInitialFacing.Read(exINI, pSection, "VerticalInitialFacing");
 
 	this->TrajectoryType.LoadFromINI(pINI, pSection);
+
+	this->LifeDuration.Read(exINI, pSection, "LifeDuration");
+	this->NoTargetLifeTime.Read(exINI, pSection, "NoTargetLifeTime");
+	this->CreateCapacity.Read(exINI, pSection, "CreateCapacity");
+	this->RetargetInterval.Read(exINI, pSection, "RetargetInterval");
+	this->RetargetInterval = Math::max(1, this->RetargetInterval);
+	this->RetargetRadius.Read(exINI, pSection, "RetargetRadius");
+	this->RetargetHouses.Read(exINI, pSection, "RetargetHouses");
+	this->Synchronize.Read(exINI, pSection, "Synchronize");
+	this->PeacefulVanish.Read(exINI, pSection, "PeacefulVanish");
+	this->ApplyRangeModifiers.Read(exINI, pSection, "ApplyRangeModifiers");
+	this->UseDisperseCoord.Read(exINI, pSection, "UseDisperseCoord");
+
+	this->PassDetonate.Read(exINI, pSection, "PassDetonate");
+	this->PassDetonateLocal.Read(exINI, pSection, "PassDetonateLocal");
+	this->PassDetonateWarhead.Read<true>(exINI, pSection, "PassDetonateWarhead");
+	this->PassDetonateDamage.Read(exINI, pSection, "PassDetonateDamage");
+	this->PassDetonateDelay.Read(exINI, pSection, "PassDetonateDelay");
+	this->PassDetonateDelay = Math::max(1, this->PassDetonateDelay);
+	this->PassDetonateInitialDelay.Read(exINI, pSection, "PassDetonateInitialDelay");
+	this->PassDetonateInitialDelay = Math::max(0, this->PassDetonateInitialDelay);
+	this->ProximityImpact.Read(exINI, pSection, "ProximityImpact");
+	this->ProximityWarhead.Read<true>(exINI, pSection, "ProximityWarhead");
+	this->ProximityDamage.Read(exINI, pSection, "ProximityDamage");
+	this->ProximityRadius.Read(exINI, pSection, "ProximityRadius");
+	this->ProximityDirect.Read(exINI, pSection, "ProximityDirect");
+	this->ProximityMedial.Read(exINI, pSection, "ProximityMedial");
+	this->ProximityAllies.Read(exINI, pSection, "ProximityAllies");
+	this->ProximityFlight.Read(exINI, pSection, "ProximityFlight");
+	this->ProximitySphere.Read(exINI, pSection, "ProximitySphere");
+	this->ThroughVehicles.Read(exINI, pSection, "PassThroughVehicles");
+	this->ThroughBuilding.Read(exINI, pSection, "PassThroughBuilding");
+	this->DamageEdgeAttenuation.Read(exINI, pSection, "DamageEdgeAttenuation");
+	this->DamageEdgeAttenuation = Math::max(0.0, this->DamageEdgeAttenuation);
+	this->DamageCountAttenuation.Read(exINI, pSection, "DamageCountAttenuation");
+	this->DamageCountAttenuation = Math::max(0.0, this->DamageCountAttenuation);
+
+	this->DisperseWeapons.Read(exINI, pSection, "DisperseWeapons");
+	this->DisperseBursts.Read(exINI, pSection, "DisperseBursts");
+	this->DisperseCounts.Read(exINI, pSection, "DisperseCounts");
+	this->DisperseDelays.Read(exINI, pSection, "DisperseDelays");
+	this->DisperseCycle.Read(exINI, pSection, "DisperseCycle");
+	this->DisperseInitialDelay.Read(exINI, pSection, "DisperseInitialDelay");
+	this->DisperseEffectiveRange.Read(exINI, pSection, "DisperseEffectiveRange");
+	this->DisperseSeparate.Read(exINI, pSection, "DisperseSeparate");
+	this->DisperseRetarget.Read(exINI, pSection, "DisperseRetarget");
+	this->DisperseLocation.Read(exINI, pSection, "DisperseLocation");
+	this->DisperseTendency.Read(exINI, pSection, "DisperseTendency");
+	this->DisperseHolistic.Read(exINI, pSection, "DisperseHolistic");
+	this->DisperseMarginal.Read(exINI, pSection, "DisperseMarginal");
+	this->DisperseDoRepeat.Read(exINI, pSection, "DisperseDoRepeat");
+	this->DisperseSuicide.Read(exINI, pSection, "DisperseSuicide");
+	this->DisperseFromFirer.Read(exINI, pSection, "DisperseFromFirer");
+	this->DisperseFaceCheck.Read(exINI, pSection, "DisperseFaceCheck");
+	this->DisperseForceFire.Read(exINI, pSection, "DisperseForceFire");
+	this->DisperseCoord.Read(exINI, pSection, "DisperseCoord");
 
 	this->Shrapnel_AffectsGround.Read(exINI, pSection, "Shrapnel.AffectsGround");
 	this->Shrapnel_AffectsBuildings.Read(exINI, pSection, "Shrapnel.AffectsBuildings");
@@ -54,7 +112,6 @@ void BulletTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 	this->SubjectToSolid.Read(exINI, pSection, "SubjectToBuildings");
 	this->SubjectToGround.Read(exINI, pSection, "SubjectToGround");
 
-	this->AU.Read(exINI, pSection, "AU");
 	this->BallisticScatter_IncreaseByRange.Read(exINI, pSection, "BallisticScatter.IncreaseByRange");
 	this->BallisticScatter_MinRange.Read(exINI, pSection, "BallisticScatter.MinRange");
 	this->BallisticScatter_MaxRange.Read(exINI, pSection, "BallisticScatter.MaxRange");
@@ -80,7 +137,11 @@ void BulletTypeExt::ExtData::LoadFromINIFile(CCINIClass* const pINI)
 	this->AirburstWeapon_ApplyFirepowerMult.Read(exINI, pSection, "AirburstWeapon.ApplyFirepowerMult");
 	this->AirburstWeapon_SourceScatterMin.Read(exINI, pSection, "AirburstWeapon.SourceScatterMin");
 	this->AirburstWeapon_SourceScatterMax.Read(exINI, pSection, "AirburstWeapon.SourceScatterMax");
+	this->Parachuted.Read(exINI, pSection, "Parachuted");
+	this->Parachuted_FallRate.Read(exINI, pSection, "Parachuted.FallRate");
+	this->Parachuted_MaxFallRate.Read(exINI, pSection, "Parachuted.MaxFallRate");
 	this->BombParachute.Read(exINI, pSection, "BombParachute");
+	this->AU.Read(exINI, pSection, "AU");
 
 	// Ares 0.7
 	this->BallisticScatter_Min.Read(exINI, pSection, "BallisticScatter.Min");
@@ -158,6 +219,62 @@ void BulletTypeExt::ExtData::Serialize(T& Stm)
 		.Process(this->Interceptable_WeaponOverride)
 		.Process(this->LaserTrail_Types)
 		.Process(this->Gravity)
+		.Process(this->Vertical_AircraftFix)
+		.Process(this->VerticalInitialFacing)
+
+		.Process(this->TrajectoryType)
+
+		.Process(this->LifeDuration)
+		.Process(this->NoTargetLifeTime)
+		.Process(this->CreateCapacity)
+		.Process(this->RetargetInterval)
+		.Process(this->RetargetRadius)
+		.Process(this->RetargetHouses)
+		.Process(this->Synchronize)
+		.Process(this->PeacefulVanish)
+		.Process(this->ApplyRangeModifiers)
+		.Process(this->UseDisperseCoord)
+
+		.Process(this->PassDetonate)
+		.Process(this->PassDetonateLocal)
+		.Process(this->PassDetonateWarhead)
+		.Process(this->PassDetonateDamage)
+		.Process(this->PassDetonateDelay)
+		.Process(this->PassDetonateInitialDelay)
+		.Process(this->ProximityImpact)
+		.Process(this->ProximityWarhead)
+		.Process(this->ProximityDamage)
+		.Process(this->ProximityRadius)
+		.Process(this->ProximityDirect)
+		.Process(this->ProximityMedial)
+		.Process(this->ProximityAllies)
+		.Process(this->ProximityFlight)
+		.Process(this->ProximitySphere)
+		.Process(this->ThroughVehicles)
+		.Process(this->ThroughBuilding)
+		.Process(this->DamageEdgeAttenuation)
+		.Process(this->DamageCountAttenuation)
+
+		.Process(this->DisperseWeapons)
+		.Process(this->DisperseBursts)
+		.Process(this->DisperseCounts)
+		.Process(this->DisperseDelays)
+		.Process(this->DisperseCycle)
+		.Process(this->DisperseInitialDelay)
+		.Process(this->DisperseEffectiveRange)
+		.Process(this->DisperseSeparate)
+		.Process(this->DisperseRetarget)
+		.Process(this->DisperseLocation)
+		.Process(this->DisperseTendency)
+		.Process(this->DisperseHolistic)
+		.Process(this->DisperseMarginal)
+		.Process(this->DisperseDoRepeat)
+		.Process(this->DisperseSuicide)
+		.Process(this->DisperseFromFirer)
+		.Process(this->DisperseFaceCheck)
+		.Process(this->DisperseForceFire)
+		.Process(this->DisperseCoord)
+
 		.Process(this->Shrapnel_AffectsGround)
 		.Process(this->Shrapnel_AffectsBuildings)
 		.Process(this->Shrapnel_UseWeaponTargeting)
@@ -175,7 +292,6 @@ void BulletTypeExt::ExtData::Serialize(T& Stm)
 		.Process(this->ReturnWeapon_ApplyFirepowerMult)
 		.Process(this->SubjectToSolid)
 		.Process(this->SubjectToGround)
-		.Process(this->AU)
 		.Process(this->BallisticScatter_IncreaseByRange)
 		.Process(this->BallisticScatter_MinRange)
 		.Process(this->BallisticScatter_MaxRange)
@@ -200,9 +316,11 @@ void BulletTypeExt::ExtData::Serialize(T& Stm)
 		.Process(this->AirburstWeapon_ApplyFirepowerMult)
 		.Process(this->AirburstWeapon_SourceScatterMin)
 		.Process(this->AirburstWeapon_SourceScatterMax)
+		.Process(this->Parachuted)
+		.Process(this->Parachuted_FallRate)
+		.Process(this->Parachuted_MaxFallRate)
 		.Process(this->BombParachute)
-
-		.Process(this->TrajectoryType) // just keep this shit at last
+		.Process(this->AU)
 		;
 }
 

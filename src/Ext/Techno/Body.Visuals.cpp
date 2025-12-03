@@ -28,8 +28,8 @@ void TechnoExt::DrawSelfHealPips(TechnoClass* pThis, Point2D* pLocation, Rectang
 	bool drawPip = false;
 	bool isInfantryHeal = false;
 	int selfHealFrames = 0;
-	bool hasInfantrySelfHeal = pTypeExt->SelfHealGainType.isset() && pTypeExt->SelfHealGainType.Get() == SelfHealGainType::Infantry;
-	bool hasUnitSelfHeal = pTypeExt->SelfHealGainType.isset() && pTypeExt->SelfHealGainType.Get() == SelfHealGainType::Units;
+	const bool hasInfantrySelfHeal = pTypeExt->SelfHealGainType.isset() && pTypeExt->SelfHealGainType.Get() == SelfHealGainType::Infantry;
+	const bool hasUnitSelfHeal = pTypeExt->SelfHealGainType.isset() && pTypeExt->SelfHealGainType.Get() == SelfHealGainType::Units;
 	auto const whatAmI = pThis->WhatAmI();
 	const bool isOrganic = (whatAmI == AbstractType::Infantry || (pType->Organic && whatAmI == AbstractType::Unit));
 
@@ -46,7 +46,7 @@ void TechnoExt::DrawSelfHealPips(TechnoClass* pThis, Point2D* pLocation, Rectang
 				return true;
 
 			const bool isCampaign = SessionClass::IsCampaign();
-			const bool fromPlayer = RulesExt::Global()->GainSelfHealFromPlayerControl && isCampaign;
+			const bool fromPlayer = RulesExt::Global()->GainSelfHealFromPlayerControl && isCampaign && (pOwner->IsHumanPlayer || pOwner->IsInPlayerControl);
 			const bool fromAllies = RulesExt::Global()->GainSelfHealFromAllies;
 
 			if (fromPlayer || fromAllies)
@@ -60,7 +60,7 @@ void TechnoExt::DrawSelfHealPips(TechnoClass* pThis, Point2D* pLocation, Rectang
 							|| (fromAllies && (!isCampaign || (!pHouse->IsHumanPlayer && !pHouse->IsInPlayerControl)) && pHouse->IsAlliedWith(pOwner));
 					};
 
-				for (auto pHouse : HouseClass::Array)
+				for (auto const pHouse : HouseClass::Array)
 				{
 					if (checkHouse(pHouse) && haveHeal(pHouse))
 						return true;
@@ -111,9 +111,9 @@ void TechnoExt::DrawSelfHealPips(TechnoClass* pThis, Point2D* pLocation, Rectang
 		}
 		else
 		{
-			auto pBldType = static_cast<BuildingClass*>(pThis)->Type;
-			int fHeight = pBldType->GetFoundationHeight(false);
-			int yAdjust = -Unsorted::CellHeightInPixels / 2;
+			const auto pBldType = static_cast<BuildingClass*>(pThis)->Type;
+			const int fHeight = pBldType->GetFoundationHeight(false);
+			const int yAdjust = -Unsorted::CellHeightInPixels / 2;
 
 			auto& offset = RulesExt::Global()->Pips_SelfHeal_Buildings_Offset.Get();
 			pipFrames = RulesExt::Global()->Pips_SelfHeal_Buildings;
@@ -121,7 +121,7 @@ void TechnoExt::DrawSelfHealPips(TechnoClass* pThis, Point2D* pLocation, Rectang
 			yOffset = offset.Y + yAdjust * fHeight + pBldType->Height * yAdjust;
 		}
 
-		int pipFrame = isInfantryHeal ? pipFrames.Get().X : pipFrames.Get().Y;
+		const int pipFrame = isInfantryHeal ? pipFrames.Get().X : pipFrames.Get().Y;
 
 		Point2D position = { pLocation->X + xOffset, pLocation->Y + yOffset };
 
@@ -152,7 +152,7 @@ void TechnoExt::DrawInsignia(TechnoClass* pThis, Point2D* pLocation, RectangleSt
 
 	TechnoTypeExt::ExtData* pTechnoTypeExt = TechnoTypeExt::ExtMap.Find(pTechnoType);
 
-	bool isVisibleToPlayer = (pOwner && pOwner->IsAlliedWith(HouseClass::CurrentPlayer))
+	const bool isVisibleToPlayer = (pOwner && pOwner->IsAlliedWith(HouseClass::CurrentPlayer))
 		|| HouseClass::IsCurrentPlayerObserver()
 		|| pTechnoTypeExt->Insignia_ShowEnemy.Get(RulesExt::Global()->EnemyInsignia);
 
@@ -176,7 +176,7 @@ void TechnoExt::DrawInsignia(TechnoClass* pThis, Point2D* pLocation, RectangleSt
 	int insigniaFrame = insigniaFrames.X;
 	int frameIndex = pTechnoTypeExt->InsigniaFrame.Get(pThis);
 
-	if (pTechnoType->Passengers > 0)
+	if (pTechnoType->Passengers > 0 && pTechnoTypeExt->Insignia_Passengers.size() > 0)
 	{
 		int passengersIndex = pTechnoTypeExt->Passengers_BySize ? pThis->Passengers.GetTotalSize() : pThis->Passengers.NumPassengers;
 		passengersIndex = Math::min(passengersIndex, pTechnoType->Passengers);
@@ -188,7 +188,7 @@ void TechnoExt::DrawInsignia(TechnoClass* pThis, Point2D* pLocation, RectangleSt
 			isCustomInsignia = true;
 		}
 
-		int frame = pTechnoTypeExt->InsigniaFrame_Passengers[passengersIndex].Get(pThis);
+		const int frame = pTechnoTypeExt->InsigniaFrame_Passengers[passengersIndex].Get(pThis);
 
 		if (frame != -1)
 			frameIndex = frame;
@@ -199,9 +199,9 @@ void TechnoExt::DrawInsignia(TechnoClass* pThis, Point2D* pLocation, RectangleSt
 			insigniaFrames = frames.Get();
 	}
 
-	if (pTechnoType->Gunner)
+	if (pTechnoType->Gunner && pTechnoTypeExt->Insignia_Weapon.size() > 0)
 	{
-		int weaponIndex = pThis->CurrentWeaponNumber;
+		const int weaponIndex = pThis->CurrentWeaponNumber;
 
 		if (auto const pCustomShapeFile = pTechnoTypeExt->Insignia_Weapon[weaponIndex].Get(pThis))
 		{
@@ -210,7 +210,7 @@ void TechnoExt::DrawInsignia(TechnoClass* pThis, Point2D* pLocation, RectangleSt
 			isCustomInsignia = true;
 		}
 
-		int frame = pTechnoTypeExt->InsigniaFrame_Weapon[weaponIndex].Get(pThis);
+		const int frame = pTechnoTypeExt->InsigniaFrame_Weapon[weaponIndex].Get(pThis);
 
 		if (frame != -1)
 			frameIndex = frame;
@@ -639,7 +639,7 @@ Point2D TechnoExt::GetBuildingSelectBracketPosition(TechnoClass* pThis, Building
 	CoordStruct dim2 = CoordStruct::Empty;
 	pBuildingType->Dimension2(&dim2);
 	dim2 = { -dim2.X / 2, dim2.Y / 2, dim2.Z };
-	Point2D positionFix = TacticalClass::CoordsToScreen(dim2);
+	const Point2D positionFix = TacticalClass::CoordsToScreen(dim2);
 
 	const int foundationWidth = pBuildingType->GetFoundationWidth();
 	const int foundationHeight = pBuildingType->GetFoundationHeight(false);
@@ -711,9 +711,13 @@ void TechnoExt::DrawSelectBox(TechnoClass* pThis, const Point2D* pLocation, cons
 
 	if ((pGroundShape || pSelectBox->GroundLine) && whatAmI != BuildingClass::AbsID && (pSelectBox->Ground_AlwaysDraw || pThis->IsInAir()))
 	{
-		CoordStruct coords = pThis->GetCenterCoords();
-		coords.Z = MapClass::Instance.GetCellFloorHeight(coords);
-		auto [point, visible] = TacticalClass::Instance->CoordsToClient(coords);
+		auto [point, visible] = TacticalClass::Instance->CoordsToClient(pThis->GetRenderCoords());
+		const auto pFoot = static_cast<FootClass*>(pThis);
+
+		if (!pFoot->Locomotor)
+			Game::RaiseError(E_POINTER);
+
+		point += pFoot->Locomotor->Shadow_Point();
 
 		if (visible && pGroundShape)
 		{
@@ -733,7 +737,7 @@ void TechnoExt::DrawSelectBox(TechnoClass* pThis, const Point2D* pLocation, cons
 
 			if (pSelectBox->GroundLine_Dashed)
 				pSurface->DrawDashed(&start, &point, color, 0);
-			else
+			else if (Line_In_Bounds(&start, &point, &DSurface::ViewBounds))
 				pSurface->DrawLine(&start, &point, color);
 		}
 	}
@@ -814,13 +818,7 @@ void TechnoExt::ProcessDigitalDisplays(TechnoClass* pThis)
 
 	for (DigitalDisplayTypeClass*& pDisplayType : *pDisplayTypes)
 	{
-		if (HouseClass::IsCurrentPlayerObserver() && !pDisplayType->VisibleToHouses_Observer)
-			continue;
-
-		if (!HouseClass::IsCurrentPlayerObserver() && !EnumFunctions::CanTargetHouse(pDisplayType->VisibleToHouses, pThis->Owner, HouseClass::CurrentPlayer))
-			continue;
-
-		if (!pDisplayType->VisibleInSpecialState && (pThis->TemporalTargetingMe || pThis->IsIronCurtained()))
+		if (!pDisplayType->CanShow(pThis))
 			continue;
 
 		int value = -1;
@@ -1373,20 +1371,20 @@ void TechnoExt::DrawExtraImage(UnitClass* pThis, Point2D* pLocation, RectangleSt
 	const auto pShLoco = locomotion_cast<ShipLocomotionClass*>(iLoco);
 	const auto pAdLoco = locomotion_cast<AdvancedDriveLocomotionClass*>(iLoco);
 	const auto pJjLoco = locomotion_cast<JumpjetLocomotionClass*>(iLoco);
-	const auto rampTemp = (pDrLoco ? LocomotionRampTemp(pDrLoco->PreviousRamp, pDrLoco->SlopeTimer.Rate)
-		: (pShLoco ? LocomotionRampTemp(pShLoco->PreviousRamp, pShLoco->SlopeTimer.Rate)
+	const auto rampTemp = (pDrLoco ? LocomotionRampTemp(pDrLoco->CurrentRamp, pDrLoco->SlopeTimer.Rate)
+		: (pShLoco ? LocomotionRampTemp(pShLoco->CurrentRamp, pShLoco->SlopeTimer.Rate)
 		: (pAdLoco ? LocomotionRampTemp(pAdLoco->CurrentRamp, pAdLoco->SlopeTimer.Rate) : LocomotionRampTemp())));
 	const auto faceTemp = pJjLoco
 		? LocomotionFaceTemp(pJjLoco->LocomotionFacing.DesiredFacing, pJjLoco->LocomotionFacing.ROT, pJjLoco->CurrentSpeed)
 		: LocomotionFaceTemp();
 	if (pDrLoco)
 	{
-		pDrLoco->PreviousRamp = tilt;
+		pDrLoco->CurrentRamp = tilt;
 		pDrLoco->SlopeTimer.Rate = 0;
 	}
 	else if (pShLoco)
 	{
-		pShLoco->PreviousRamp = tilt;
+		pShLoco->CurrentRamp = tilt;
 		pShLoco->SlopeTimer.Rate = 0;
 	}
 	else if (pAdLoco)
@@ -1419,12 +1417,12 @@ void TechnoExt::DrawExtraImage(UnitClass* pThis, Point2D* pLocation, RectangleSt
 
 	if (pDrLoco)
 	{
-		pDrLoco->PreviousRamp = rampTemp.CurrentRamp;
+		pDrLoco->CurrentRamp = rampTemp.CurrentRamp;
 		pDrLoco->SlopeTimer.Rate = rampTemp.Rate;
 	}
 	else if (pShLoco)
 	{
-		pShLoco->PreviousRamp = rampTemp.CurrentRamp;
+		pShLoco->CurrentRamp = rampTemp.CurrentRamp;
 		pShLoco->SlopeTimer.Rate = rampTemp.Rate;
 	}
 	else if (pAdLoco)

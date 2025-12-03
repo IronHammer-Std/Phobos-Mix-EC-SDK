@@ -42,7 +42,6 @@ DEFINE_HOOK(0x4DEBB4, FootClass_OnDestroyed_NotifyParent, 0x8)
 	return 0;
 }
 
-
 DEFINE_HOOK(0x6F6F20, TechnoClass_Unlimbo_UnlimboAttachments, 0x6)
 {
 	GET(TechnoClass*, pThis, ESI);
@@ -57,6 +56,15 @@ DEFINE_HOOK(0x6F6B1C, TechnoClass_Limbo_LimboAttachments, 0x6)
 	GET(TechnoClass*, pThis, ESI);
 
 	TechnoExt::LimboAttachments(pThis);
+
+	return 0;
+}
+
+DEFINE_HOOK(0x702D6D, TechnoClass_RegisterDestruction_ResetKiller, 0x6)
+{
+	GET(TechnoClass*, pKiller, EDI);
+
+	R->EDI(TechnoExt::GetTrainParent(pKiller));
 
 	return 0;
 }
@@ -147,7 +155,7 @@ void AccountForMovingInto(CellClass* into, bool isAlt, TechnoClass* pThis, byte&
 	// Non-occupiers shouldn't be inserted as incoming units anyways so don't check that
 	if (pIncoming)
 	{
-		if (VTable::Get(pIncoming) != 0x7F5C70) // UnitClass::AbsVTable
+		if (VTable::Get(pIncoming) != 0x7F5C70 && Phobos::Config::DebugToolEnable) // UnitClass::AbsVTable
 		{
 			Debug::LogAndMessage("FootClass::IsCellOccupied: Found InvalidUnit(0x%08X) at(%d,%d) with dirty vtable in moving check!\n",
 				reinterpret_cast<DWORD>(pIncoming), into->MapCoords.X, into->MapCoords.Y);
@@ -181,8 +189,6 @@ void AccountForMovingInto(CellClass* into, bool isAlt, TechnoClass* pThis, byte&
 
 DEFINE_HOOK(0x73FA92, UnitClass_CanEnterCell_CheckMovingInto, 0x0)
 {
-	enum { ContinueCheck = 0x73FC24, NoMove = 0x73FACD };
-
 	GET_STACK(CellClass*, into, STACK_OFFSET(0x90, 0x4));
 	GET_STACK(bool const, isAlt, STACK_OFFSET(0x90, -0x7D));
 	GET(UnitClass*, pThis, EBX);
@@ -193,7 +199,7 @@ DEFINE_HOOK(0x73FA92, UnitClass_CanEnterCell_CheckMovingInto, 0x0)
 	AccountForMovingInto(into, isAlt, pThis, occupyFlags, isVehicleFlagSet);
 
 	// stolen code ahead
-	return GroundType::Array[static_cast<int>(isAlt ? LandType::Road : into->LandType)].Cost[static_cast<int>(pThis->Type->SpeedType)] == 0.0f ? NoMove : ContinueCheck;
+	return isAlt ? 0x73FC24 : 0x73FA9E;
 }
 
 DEFINE_HOOK(0x51C249, InfantryClass_CanEnterCell_AssumeNoVehicleByDefault, 0x0)
@@ -259,7 +265,7 @@ namespace TechnoAttachmentTemp
 }
 
 #define DEFINE_CELLTECHNO_WRAPPER(mode) \
-TechnoClass* __fastcall CellTechno_##mode(CellClass* pThis, discard_t, Point2D *a2, bool check_alt, TechnoClass* techno) \
+TechnoClass* __fastcall CellTechno_##mode(CellClass* pThis, void*, Point2D *a2, bool check_alt, TechnoClass* techno) \
 { \
 	TechnoAttachmentTemp::currentMode = CellTechnoMode::mode; \
 	auto const retval = pThis->FindTechnoNearestTo(*a2, check_alt, techno); \
@@ -470,7 +476,7 @@ DEFINE_HOOK(0x6CC763, SuperClass_Place_ChronoWarp_SkipChildren, 0x6)
 }
 
 #pragma region Command inheritance
-
+/*
 void ParentClickedWaypoint(TechnoClass* pThis, int idxPath, signed char idxWP)
 {
 	// Rewrite of the original code
@@ -480,7 +486,7 @@ void ParentClickedWaypoint(TechnoClass* pThis, int idxPath, signed char idxWP)
 		pThis->unknown_bool_430 = false;
 
 	// Children handling
-	if (const auto& pExt = TechnoExt::ExtMap.Find(pThis))
+	if (const auto pExt = TechnoExt::ExtMap.Find(pThis))
 	{
 		for (const auto& pAttachment : pExt->ChildAttachments)
 		{
@@ -496,7 +502,7 @@ void ParentClickedTargetAction(TechnoClass* pThis, Action action, ObjectClass* p
 	Unsorted::MoveFeedback = false;
 
 	// Children handling
-	if (const auto& pExt = TechnoExt::ExtMap.Find(pThis))
+	if (const auto pExt = TechnoExt::ExtMap.Find(pThis))
 	{
 		for (const auto& pAttachment : pExt->ChildAttachments)
 		{
@@ -512,7 +518,7 @@ void ParentClickedCellAction(TechnoClass* pThis, Action action, CellStruct* pCel
 	Unsorted::MoveFeedback = false;
 
 	// Children handling
-	if (const auto& pExt = TechnoExt::ExtMap.Find(pThis))
+	if (const auto pExt = TechnoExt::ExtMap.Find(pThis))
 	{
 		for (const auto& pAttachment : pExt->ChildAttachments)
 		{
@@ -528,7 +534,7 @@ void ParentAreaGuardAction(TechnoClass* pThis)
 	Unsorted::MoveFeedback = false;
 
 	// Children handling
-	if (const auto& pExt = TechnoExt::ExtMap.Find(pThis))
+	if (const auto pExt = TechnoExt::ExtMap.Find(pThis))
 	{
 		for (const auto& pAttachment : pExt->ChildAttachments)
 		{
@@ -555,12 +561,13 @@ DEFINE_HOOK(0x4AE7B3, DisplayClass_ActiveClickWith_Iterate, 0x0)
 
 	if (pTarget)
 	{
-		const auto count = ObjectClass::CurrentObjects.Count;
+		const int count = ObjectClass::CurrentObjects.Count;
 
 		if (count > 0)
 		{
-			const auto mode1 = Phobos::Config::DistributionSpreadMode;
-			const auto mode2 = Phobos::Config::DistributionFilterMode;
+			const int mode1 = Phobos::Config::DistributionSpreadMode;
+			const int mode2 = Phobos::Config::DistributionFilterMode;
+			const auto pTargetTechno = abstract_cast<TechnoClass*, true>(pTarget);
 
 			// Distribution mode main
 			if (DistributionModeHoldDownCommandClass::Enabled
@@ -568,20 +575,21 @@ DEFINE_HOOK(0x4AE7B3, DisplayClass_ActiveClickWith_Iterate, 0x0)
 				&& count > 1
 				&& action != Action::NoMove
 				&& !PlanningNodeClass::PlanningModeActive
-				&& (pTarget->AbstractFlags & AbstractFlags::Techno) != AbstractFlags::None
-				&& !pTarget->IsInAir())
+				&& pTargetTechno
+				&& !pTarget->IsInAir()
+				&& (HouseClass::CurrentPlayer->IsAlliedWith(pTargetTechno->Owner)
+					? Phobos::Config::AllowDistributionCommand_AffectsAllies
+					: Phobos::Config::AllowDistributionCommand_AffectsEnemies))
 			{
 				VocClass::PlayGlobal(RulesExt::Global()->AddDistributionModeCommandSound, 0x2000, 1.0);
+				const bool targetIsNeutral = pTargetTechno->Owner->IsNeutral();
 
-				const auto pTargetHouse = static_cast<TechnoClass*>(pTarget)->Owner;
-				const bool targetIsNeutral = pTargetHouse->IsNeutral();
-
-				const auto range = (2 << mode1);
+				const int range = (2 << mode1);
 				const auto center = pTarget->GetCoords();
 				const auto pItems = Helpers::Alex::getCellSpreadItems(center, range);
 
 				std::vector<std::pair<TechnoClass*, int>> record;
-				const auto maxSize = pItems.size();
+				const size_t maxSize = pItems.size();
 				record.reserve(maxSize);
 
 				int current = 1;
@@ -608,14 +616,14 @@ DEFINE_HOOK(0x4AE7B3, DisplayClass_ActiveClickWith_Iterate, 0x0)
 						record.emplace_back(pItem, 0);
 				}
 
-				const auto recordSize = record.size();
+				const size_t recordSize = record.size();
 				std::sort(&record[0], &record[recordSize],[&center](const auto& pairA, const auto& pairB)
 				{
 					const auto coordsA = pairA.first->GetCoords();
-					const auto distanceA = Point2D{coordsA.X, coordsA.Y}.DistanceFromSquared(Point2D{center.X, center.Y});
+					const double distanceA = Point2D{coordsA.X, coordsA.Y}.DistanceFromSquared(Point2D{center.X, center.Y});
 
 					const auto coordsB = pairB.first->GetCoords();
-					const auto distanceB = Point2D{coordsB.X, coordsB.Y}.DistanceFromSquared(Point2D{center.X, center.Y});
+					const double distanceB = Point2D{coordsB.X, coordsB.Y}.DistanceFromSquared(Point2D{center.X, center.Y});
 
 					return distanceA < distanceB;
 				});
@@ -634,7 +642,7 @@ DEFINE_HOOK(0x4AE7B3, DisplayClass_ActiveClickWith_Iterate, 0x0)
 					{
 						const auto& [pItem, num] = record[i];
 
-						if (pTechno->MouseOverObject(pItem) != action)
+						if (pSelect->MouseOverObject(pItem) != action)
 							continue;
 
 						if (!targetIsNeutral && pItem->Owner->IsNeutral())
@@ -716,7 +724,7 @@ DEFINE_HOOK(0x4AE7B3, DisplayClass_ActiveClickWith_Iterate, 0x0)
 
 	return 0x4AE99B;
 }
-
+*/
 namespace TechnoAttachmentTemp
 {
 	bool stopPressed = false;
@@ -751,7 +759,7 @@ DEFINE_HOOK(0x6FFE4F, TechnoClass_ClickedEvent_HandleChildren, 0x6)
 {
 	if ((TechnoAttachmentTemp::stopPressed || TechnoAttachmentTemp::deployPressed) && TechnoAttachmentTemp::pParent)
 	{
-		if (auto const& pExt = TechnoExt::ExtMap.Find(TechnoAttachmentTemp::pParent))
+		if (auto const pExt = TechnoExt::ExtMap.TryFind(TechnoAttachmentTemp::pParent))
 		{
 			for (auto const& pAttachment : pExt->ChildAttachments)
 			{
@@ -813,9 +821,7 @@ DEFINE_HOOK(0x6F3283, TechnoClass_CanScatter_CheckIfAttached, 0x8)
 
 	GET(TechnoClass*, pThis, ECX);
 
-	auto const& pExt = TechnoExt::ExtMap.Find(pThis);
-
-	return pExt->ParentAttachment ? ReturnFalse : ContinueCheck;
+	return TechnoExt::ExtMap.Find(pThis)->ParentAttachment ? ReturnFalse : ContinueCheck;
 }
 
 DEFINE_HOOK(0x4817A8, CellClass_Incoming_CheckIfTechnoOccupies, 0x6)
@@ -824,7 +830,7 @@ DEFINE_HOOK(0x4817A8, CellClass_Incoming_CheckIfTechnoOccupies, 0x6)
 
 	GET(TechnoClass*, pTechno, ESI);
 
-	auto const& pExt = TechnoExt::ExtMap.Find(pTechno);
+	auto const pExt = TechnoExt::ExtMap.Find(pTechno);
 
 	return pExt->ParentAttachment && pExt->ParentAttachment->GetType()->OccupiesCell ? ConditionIsTrue : ContinueCheck;
 }
@@ -876,7 +882,7 @@ DEFINE_HOOK(0x736A2F, UnitClass_RotationAI_ForbidAttachmentRotation, 0x7)
 	return TechnoExt::HasAttachmentLoco(pThis) && TechnoExt::ExtMap.Find(pThis)->ParentAttachment ? SkipBodyRotation : ContinueCheck;
 }
 
-Action __fastcall UnitClass_MouseOverCell_Wrapper(UnitClass* pThis, discard_t, CellStruct const* pCell, bool checkFog, bool ignoreForce)
+Action __fastcall UnitClass_MouseOverCell_Wrapper(UnitClass* pThis, void*, CellStruct const* pCell, bool checkFog, bool ignoreForce)
 {
 	Action result = pThis->UnitClass::MouseOverCell(pCell, checkFog, ignoreForce);
 

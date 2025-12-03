@@ -5,6 +5,7 @@
 #include "Savegame.h"
 #include <optional>
 #include <vector>
+#include <set>
 #include <map>
 #include <unordered_map>
 #include <bitset>
@@ -303,13 +304,46 @@ namespace Savegame
 					return true;
 				}
 			}
+
 			return false;
 		}
 
 		bool WriteToStream(PhobosStreamWriter& Stm, const std::string& Value) const
 		{
-			Stm.Save(Value.size());
-			Stm.Write(reinterpret_cast<const byte*>(Value.c_str()), Value.size());
+			size_t size = Value.size();
+			Stm.Save(size);
+			Stm.Write(reinterpret_cast<const byte*>(Value.c_str()), size);
+
+			return true;
+		}
+	};
+
+	template <>
+	struct Savegame::PhobosStreamObject<std::wstring>
+	{
+		bool ReadFromStream(PhobosStreamReader& Stm, std::wstring& Value, bool RegisterForChange) const
+		{
+			size_t size = 0;
+
+			if (Stm.Load(size))
+			{
+				std::vector<wchar_t> buffer(size);
+
+				if (!size || Stm.Read(reinterpret_cast<byte*>(buffer.data()), size * sizeof(wchar_t)))
+				{
+					Value.assign(buffer.begin(), buffer.end());
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		bool WriteToStream(PhobosStreamWriter& Stm, const std::wstring& Value) const
+		{
+			size_t size = Value.size();
+			Stm.Save(size);
+			Stm.Write(reinterpret_cast<const byte*>(Value.c_str()), size * sizeof(wchar_t));
 
 			return true;
 		}
@@ -436,6 +470,49 @@ namespace Savegame
 					return false;
 			}
 
+			return true;
+		}
+	};
+
+	template <typename T>
+	struct Savegame::PhobosStreamObject<std::set<T>>
+	{
+		bool ReadFromStream(PhobosStreamReader& Stm, std::set<T>& Value, bool RegisterForChange) const
+		{
+			Value.clear();
+			static_assert(!std::is_pointer_v<T>);
+			static_assert(std::is_trivially_constructible_v<T>);
+			static_assert(std::is_trivially_destructible_v<T>);
+			size_t Count = 0;
+			if (!Stm.Load(Count))
+			{
+				return false;
+			}
+
+			for (auto ix = 0u; ix < Count; ++ix)
+			{
+				T buffer;
+				if (!Savegame::ReadPhobosStream(Stm, buffer, RegisterForChange))
+				{
+					return false;
+				}
+				Value.insert(buffer);
+			}
+
+			return true;
+		}
+
+		bool WriteToStream(PhobosStreamWriter& Stm, const std::set<T>& Value) const
+		{
+			Stm.Save(Value.size());
+
+			for (const auto& item : Value)
+			{
+				if (!Savegame::WritePhobosStream(Stm, item))
+				{
+					return false;
+				}
+			}
 			return true;
 		}
 	};

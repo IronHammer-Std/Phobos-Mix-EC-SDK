@@ -56,6 +56,11 @@ bool Phobos::Config::EnableSelectBox = false;
 bool Phobos::Config::DigitalDisplay_Enable = false;
 bool Phobos::Config::MessageApplyHoverState = false;
 bool Phobos::Config::MessageDisplayInCenter = false;
+int Phobos::Config::MessageDisplayInCenter_BoardOpacity = 30;
+int Phobos::Config::MessageDisplayInCenter_LabelsCount = 6;
+int Phobos::Config::MessageDisplayInCenter_RecordsCount = 12;
+size_t Phobos::Config::DefaultPlacingDirection = 0;
+size_t Phobos::Config::CurrentPlacingDirection = 0;
 bool Phobos::Config::ShowBuildingStatistics = false;
 bool Phobos::Config::DrawAdjacentBoundary = false;
 bool Phobos::Config::RealTimeTimers = false;
@@ -70,15 +75,24 @@ bool Phobos::Config::ShowHarvesterCounter = false;
 bool Phobos::Config::ShowPowerDelta = true;
 bool Phobos::Config::ShowWeedsCounter = false;
 bool Phobos::Config::HideLightFlashEffects = true;
+bool Phobos::Config::HideLaserTrailEffects = true;
+bool Phobos::Config::HideShakeEffects = true;
 bool Phobos::Config::ShowFlashOnSelecting = false;
 bool Phobos::Config::UnitPowerDrain = false;
+bool Phobos::Config::AllowSwitchNoMoveCommand = false;
+bool Phobos::Config::AllowDistributionCommand = false;
+bool Phobos::Config::AllowDistributionCommand_SpreadMode = true;
+bool Phobos::Config::AllowDistributionCommand_SpreadModeScroll = true;
+bool Phobos::Config::AllowDistributionCommand_FilterMode = true;
+bool Phobos::Config::AllowDistributionCommand_AffectsAllies = true;
+bool Phobos::Config::AllowDistributionCommand_AffectsEnemies = true;
+bool Phobos::Config::ApplyNoMoveCommand = true;
+int Phobos::Config::DistributionSpreadMode = 2;
+int Phobos::Config::DistributionFilterMode = 2;
 int Phobos::Config::SuperWeaponSidebar_RequiredSignificance = 0;
 bool Phobos::Config::SelectedDisplay_Enable = false;
 bool Phobos::Config::SelectedDisplay_Expand = false;
 int Phobos::Config::SelectedDisplay_MaxCameo = 10;
-bool Phobos::Config::AllowDistributionCommand = false;
-int Phobos::Config::DistributionSpreadMode = 2;
-int Phobos::Config::DistributionFilterMode = 2;
 bool Phobos::Config::ScrollSidebarStripInTactical = true;
 bool Phobos::Config::ScrollSidebarStripWhenHoldAlt = true;
 bool Phobos::Config::ScrollSidebarStripWhenHoldCtrl = true;
@@ -103,6 +117,9 @@ DEFINE_HOOK(0x5FACDF, OptionsClass_LoadSettings_LoadPhobosSettings, 0x5)
 	Phobos::Config::ShowPlacementPreview = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "ShowPlacementPreview", true);
 	Phobos::Config::MessageApplyHoverState = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "MessageApplyHoverState", false);
 	Phobos::Config::MessageDisplayInCenter = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "MessageDisplayInCenter", false);
+	Phobos::Config::MessageDisplayInCenter_BoardOpacity = CCINIClass::INI_RA2MD.ReadInteger(phobosSection, "MessageDisplayInCenter.BoardOpacity", 30);
+	Phobos::Config::MessageDisplayInCenter_LabelsCount = CCINIClass::INI_RA2MD.ReadInteger(phobosSection, "MessageDisplayInCenter.LabelsCount", 6);
+	Phobos::Config::MessageDisplayInCenter_RecordsCount = CCINIClass::INI_RA2MD.ReadInteger(phobosSection, "MessageDisplayInCenter.RecordsCount", 12);
 	Phobos::Config::RealTimeTimers = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "RealTimeTimers", false);
 	Phobos::Config::RealTimeTimers_Adaptive = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "RealTimeTimers.Adaptive", false);
 	Phobos::Config::EnableSelectBox = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "EnableSelectBox", false);
@@ -113,11 +130,15 @@ DEFINE_HOOK(0x5FACDF, OptionsClass_LoadSettings_LoadPhobosSettings, 0x5)
 	Phobos::Config::ShowHarvesterCounter = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "ShowHarvesterCounter", true);
 	Phobos::Config::ShowWeedsCounter = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "ShowWeedsCounter", true);
 	Phobos::Config::HideLightFlashEffects = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "HideLightFlashEffects", false);
+	Phobos::Config::HideLaserTrailEffects = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "HideLaserTrailEffects", false);
+	Phobos::Config::HideShakeEffects = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "HideShakeEffects", false);
 	Phobos::Config::ShowFlashOnSelecting = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "ShowFlashOnSelecting", false);
 	Phobos::Config::SuperWeaponSidebar_RequiredSignificance = CCINIClass::INI_RA2MD.ReadInteger(phobosSection, "SuperWeaponSidebar.RequiredSignificance", 0);
-
+	Phobos::Config::DefaultPlacingDirection = static_cast<size_t>(CCINIClass::INI_RA2MD.ReadInteger(phobosSection, "DefaultPlacingDirection", 0)) & 0x1Fu;
+	Phobos::Config::CurrentPlacingDirection = Phobos::Config::DefaultPlacingDirection;
 	Phobos::Config::ShowBuildingStatistics = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "ShowBuildingStatistics", false);
 	Phobos::Config::DrawAdjacentBoundary = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "DrawAdjacentBoundary", false);
+	Phobos::Config::ApplyNoMoveCommand = CCINIClass::INI_RA2MD.ReadBool(phobosSection, "DefaultApplyNoMoveCommand", true);
 	Phobos::Config::DistributionSpreadMode = CCINIClass::INI_RA2MD.ReadInteger(phobosSection, "DefaultDistributionSpreadMode", 2);
 	Phobos::Config::DistributionSpreadMode = std::clamp(Phobos::Config::DistributionSpreadMode, 0, 3);
 	Phobos::Config::DistributionFilterMode = CCINIClass::INI_RA2MD.ReadInteger(phobosSection, "DefaultDistributionFilterMode", 2);
@@ -318,60 +339,13 @@ DEFINE_HOOK(0x52D21F, InitRules_ThingsThatShouldntBeSerailized, 0x6)
 	Phobos::Config::SuperWeaponSidebarCommands = pINI_RULESMD->ReadBool("GlobalControls", "SuperWeaponSidebarKeysEnabled", Phobos::Config::SuperWeaponSidebarCommands);
 	Phobos::Config::ShowPlanningPath = pINI_RULESMD->ReadBool("GlobalControls", "DebugPlanningPaths", Phobos::Config::ShowPlanningPath);
 
+	Phobos::Config::AllowSwitchNoMoveCommand = pINI_RULESMD->ReadBool("GlobalControls", "AllowSwitchNoMoveCommand", Phobos::Config::AllowDistributionCommand);
 	Phobos::Config::AllowDistributionCommand = pINI_RULESMD->ReadBool("GlobalControls", "AllowDistributionCommand", Phobos::Config::AllowDistributionCommand);
+	Phobos::Config::AllowDistributionCommand_SpreadMode = pINI_RULESMD->ReadBool("GlobalControls", "AllowDistributionCommand.SpreadMode", Phobos::Config::AllowDistributionCommand_SpreadMode);
+	Phobos::Config::AllowDistributionCommand_SpreadModeScroll = pINI_RULESMD->ReadBool("GlobalControls", "AllowDistributionCommand.SpreadModeScroll", Phobos::Config::AllowDistributionCommand_SpreadModeScroll);
+	Phobos::Config::AllowDistributionCommand_FilterMode = pINI_RULESMD->ReadBool("GlobalControls", "AllowDistributionCommand.FilterMode", Phobos::Config::AllowDistributionCommand_FilterMode);
+	Phobos::Config::AllowDistributionCommand_AffectsAllies = pINI_RULESMD->ReadBool("GlobalControls", "AllowDistributionCommand.AffectsAllies", Phobos::Config::AllowDistributionCommand_AffectsAllies);
+	Phobos::Config::AllowDistributionCommand_AffectsEnemies = pINI_RULESMD->ReadBool("GlobalControls", "AllowDistributionCommand.AffectsEnemies", Phobos::Config::AllowDistributionCommand_AffectsEnemies);
 
 	return 0;
-}
-
-
-bool Phobos::ShouldQuickSave = false;
-std::wstring Phobos::CustomGameSaveDescription {};
-
-void Phobos::PassiveSaveGame()
-{
-	auto PrintMessage = [](const wchar_t* pMessage)
-	{
-		MessageListClass::Instance.PrintMessage(
-			pMessage,
-			RulesClass::Instance->MessageDelay,
-			HouseClass::CurrentPlayer->ColorSchemeIndex,
-			true
-		);
-	};
-
-	PrintMessage(StringTable::LoadString(GameStrings::TXT_SAVING_GAME));
-	char fName[0x80];
-
-	SYSTEMTIME time;
-	GetLocalTime(&time);
-
-	_snprintf_s(fName, 0x7F, "Map.%04u%02u%02u-%02u%02u%02u-%05u.sav",
-		time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond, time.wMilliseconds);
-
-	if (ScenarioClass::SaveGame(fName, Phobos::CustomGameSaveDescription.c_str()))
-		PrintMessage(StringTable::LoadString(GameStrings::TXT_GAME_WAS_SAVED));
-	else
-		PrintMessage(StringTable::LoadString(GameStrings::TXT_ERROR_SAVING_GAME));
-}
-
-DEFINE_HOOK(0x55DBCD, MainLoop_SaveGame, 0x6)
-{
-	// This happens right before LogicClass::Update()
-	enum { SkipSave = 0x55DC99, InitialSave = 0x55DBE6 };
-
-	bool& scenario_saved = *reinterpret_cast<bool*>(0xABCE08);
-	if (SessionClass::IsSingleplayer() && !scenario_saved)
-	{
-		scenario_saved = true;
-		if (Phobos::ShouldQuickSave)
-		{
-			Phobos::PassiveSaveGame();
-			Phobos::ShouldQuickSave = false;
-			Phobos::CustomGameSaveDescription.clear();
-		}
-		else if (Phobos::Config::SaveGameOnScenarioStart && SessionClass::IsCampaign())
-			return InitialSave;
-	}
-
-	return SkipSave;
 }

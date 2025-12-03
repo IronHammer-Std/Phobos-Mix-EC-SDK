@@ -25,6 +25,11 @@ const wchar_t* CeaseFireStanceClass::GetUIDescription() const
 
 void CeaseFireStanceClass::Execute(WWKey eInput) const
 {
+	CeaseFireStanceClass::CeaseFireExecute();
+}
+
+void CeaseFireStanceClass::CeaseFireExecute()
+{
 	std::vector<TechnoClass*> TechnoVectorCeaseFire;
 	std::vector<TechnoClass*> TechnoVectorNonCeaseFire;
 
@@ -35,26 +40,25 @@ void CeaseFireStanceClass::Execute(WWKey eInput) const
 	bool isAllSelectedUnitCeaseFireStance = true;
 
 	auto processATechno = [&](TechnoClass* pTechno)
-		{
-			const auto pTechnoExt = TechnoExt::ExtMap.Find(pTechno);
+	{
+		const auto pTechnoExt = TechnoExt::ExtMap.Find(pTechno);
 
-			// If not togglable then exclude it from the iteration.
-			if (!pTechnoExt->CanToggleCeaseFireStance())
-				return;
-
-			isAnySelectedUnitTogglable = true;
-
-			if (pTechnoExt->GetCeaseFireStance())
-			{
-				TechnoVectorCeaseFire.push_back(pTechno);
-			}
-			else
-			{
-				isAllSelectedUnitCeaseFireStance = false;
-				TechnoVectorNonCeaseFire.push_back(pTechno);
-			}
+		// If not togglable then exclude it from the iteration.
+		if (!pTechnoExt->CanToggleCeaseFireStance())
 			return;
-		};
+
+		isAnySelectedUnitTogglable = true;
+
+		if (pTechnoExt->GetCeaseFireStance())
+		{
+			TechnoVectorCeaseFire.push_back(pTechno);
+		}
+		else
+		{
+			isAllSelectedUnitCeaseFireStance = false;
+			TechnoVectorNonCeaseFire.push_back(pTechno);
+		}
+	};
 
 	for (const auto& pUnit : ObjectClass::CurrentObjects)
 	{
